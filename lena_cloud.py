@@ -3,7 +3,6 @@ from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 
 app = Flask(__name__)
-
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 HTML = """
@@ -13,130 +12,58 @@ HTML = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Léna Cloud</title>
-<style>
-body{
-    margin:0;
-    font-family:Arial, sans-serif;
-    background:linear-gradient(180deg,#f7f4ff,#ffffff);
-}
-.app{
-    max-width:780px;
-    margin:auto;
-    min-height:100vh;
-    display:flex;
-    flex-direction:column;
-}
-.header{
-    padding:18px;
-    background:#6b4eff;
-    color:white;
-    font-size:24px;
-    font-weight:bold;
-    text-align:center;
-}
-.avatar{
-    text-align:center;
-    padding:18px;
-}
-.avatar img{
-    width:120px;
-    height:120px;
-    border-radius:50%;
-    object-fit:cover;
-    box-shadow:0 4px 18px rgba(0,0,0,0.25);
-}
-.chat{
-    flex:1;
-    padding:15px;
-    overflow-y:auto;
-}
-.msg{
-    max-width:80%;
-    padding:12px 15px;
-    margin:10px 0;
-    border-radius:18px;
-    line-height:1.4;
-    white-space:pre-wrap;
-}
-.user{
-    background:#dbeafe;
-    margin-left:auto;
-}
-.lena{
-    background:#f3e8ff;
-    margin-right:auto;
-}
-.inputbar{
-    display:flex;
-    gap:8px;
-    padding:12px;
-    background:white;
-    border-top:1px solid #ddd;
-    position:sticky;
-    bottom:0;
-}
-input{
-    flex:1;
-    padding:14px;
-    font-size:16px;
-    border-radius:12px;
-    border:1px solid #bbb;
-}
-button{
-    padding:14px 18px;
-    border:0;
-    border-radius:12px;
-    background:#6b4eff;
-    color:white;
-    font-weight:bold;
-    cursor:pointer;
-}
-button:disabled{
-    opacity:.6;
-}
-.small{
-    font-size:13px;
-    text-align:center;
-    color:#666;
-    padding-bottom:8px;
-}
-</style>
 </head>
-<body>
-<div class="app">
-    <div class="header">☁️ Léna Cloud működik ✅</div>
-
-    <div class="avatar">
-        <img src="https://i.imgur.com/9XnJQ8T.png" alt="Léna">
-        <div class="small">Felhős Léna asszisztens</div>
+<body style="font-family:Arial; margin:0; background:#f7f4ff;">
+<div style="max-width:760px; margin:auto; min-height:100vh; display:flex; flex-direction:column;">
+    <div style="background:#6b4eff; color:white; padding:18px; text-align:center; font-size:24px; font-weight:bold;">
+        ☁️ Léna Cloud
     </div>
 
-    <div id="chat" class="chat">
-        <div class="msg lena">Szia Bea ❤️ Itt vagyok a felhőből.</div>
+    <div style="text-align:center; padding:20px;">
+        <div style="width:110px; height:110px; border-radius:50%; background:#6b4eff; color:white; display:flex; align-items:center; justify-content:center; font-size:52px; margin:auto;">
+            👩‍💻
+        </div>
+        <div style="color:#666; margin-top:8px;">Felhős Léna asszisztens</div>
     </div>
 
-    <div class="inputbar">
-        <input id="text" placeholder="Írj Lénának..." onkeydown="if(event.key==='Enter') sendMessage()">
-        <button id="send" onclick="sendMessage()">Küldés</button>
+    <div id="chat" style="flex:1; padding:15px;">
+        <div style="background:#f3e8ff; padding:12px 15px; border-radius:18px; max-width:80%; margin:10px 0;">
+            Szia Bea ❤️ Itt vagyok a felhőből.
+        </div>
+    </div>
+
+    <div style="display:flex; gap:8px; padding:12px; background:white; border-top:1px solid #ddd;">
+        <button onclick="startMic()" style="padding:14px; border:0; border-radius:12px; background:#ff4e8a; color:white; font-weight:bold;">🎤</button>
+        <input id="text" placeholder="Írj vagy mondj valamit..." style="flex:1; padding:14px; font-size:16px; border-radius:12px; border:1px solid #bbb;" onkeydown="if(event.key==='Enter') sendMessage()">
+        <button id="send" onclick="sendMessage()" style="padding:14px 18px; border:0; border-radius:12px; background:#6b4eff; color:white; font-weight:bold;">Küldés</button>
     </div>
 </div>
 
 <script>
+let recognition = null;
+
+function addMessage(text, who){
+    const chat = document.getElementById("chat");
+    const align = who === "user" ? "margin-left:auto;background:#dbeafe;" : "margin-right:auto;background:#f3e8ff;";
+    const div = document.createElement("div");
+    div.style.cssText = "padding:12px 15px;border-radius:18px;max-width:80%;margin:10px 0;white-space:pre-wrap;" + align;
+    div.innerText = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+}
+
 async function sendMessage(){
     const input = document.getElementById("text");
     const btn = document.getElementById("send");
-    const chat = document.getElementById("chat");
     const text = input.value.trim();
-
     if(!text) return;
 
-    chat.innerHTML += `<div class="msg user">${escapeHtml(text)}</div>`;
+    addMessage(text, "user");
     input.value = "";
     btn.disabled = true;
 
-    const thinkingId = "thinking_" + Date.now();
-    chat.innerHTML += `<div id="${thinkingId}" class="msg lena">Léna gondolkodik...</div>`;
-    chat.scrollTop = chat.scrollHeight;
+    const thinking = addMessage("Léna gondolkodik...", "lena");
 
     try{
         const res = await fetch("/ask", {
@@ -146,25 +73,61 @@ async function sendMessage(){
         });
 
         const data = await res.json();
-        document.getElementById(thinkingId).innerText = data.answer || "Nem kaptam választ.";
+        const answer = data.answer || "Nem kaptam választ.";
+        thinking.innerText = answer;
+        speak(answer);
     }catch(e){
-        document.getElementById(thinkingId).innerText = "Hiba történt a válasz közben.";
+        thinking.innerText = "Hiba történt a válasz közben.";
     }
 
     btn.disabled = false;
-    chat.scrollTop = chat.scrollHeight;
 }
 
-function escapeHtml(text){
-    return text.replace(/[&<>"']/g, function(m){
-        return ({
-            "&":"&amp;",
-            "<":"&lt;",
-            ">":"&gt;",
-            '"':"&quot;",
-            "'":"&#039;"
-        })[m];
-    });
+function startMic(){
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if(!SpeechRecognition){
+        alert("Ez a böngésző nem támogatja a beszédfelismerést. Chrome ajánlott.");
+        return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.lang = "hu-HU";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = function(){
+        document.getElementById("text").placeholder = "Hallgatlak...";
+    };
+
+    recognition.onresult = function(event){
+        const spoken = event.results[0][0].transcript;
+        document.getElementById("text").value = spoken;
+        sendMessage();
+    };
+
+    recognition.onerror = function(){
+        alert("Nem sikerült felismerni a hangot.");
+    };
+
+    recognition.onend = function(){
+        document.getElementById("text").placeholder = "Írj vagy mondj valamit...";
+    };
+
+    recognition.start();
+}
+
+function speak(text){
+    if(!window.speechSynthesis) return;
+
+    speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "hu-HU";
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    speechSynthesis.speak(utterance);
 }
 </script>
 </body>
@@ -181,7 +144,7 @@ def ask():
     message = data.get("message", "").strip()
 
     if not message:
-        return jsonify({"answer": "Írj valamit, és válaszolok. ❤️"})
+        return jsonify({"answer": "Írj vagy mondj valamit, és válaszolok. ❤️"})
 
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
