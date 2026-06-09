@@ -1,5 +1,4 @@
-import os
-import json
+import os, json
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 
@@ -19,284 +18,298 @@ DEFAULT_MEMORIES = [
     "Ha valaki azt írja, hogy Ági vagyok, akkor ő Ági.",
 ]
 
-
 def load_memory():
     memory = {"memories": DEFAULT_MEMORIES.copy()}
-
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-                saved_memories = saved.get("memories", [])
-                for item in saved_memories:
+                for item in saved.get("memories", []):
                     if item not in memory["memories"]:
                         memory["memories"].append(item)
         except Exception:
             pass
-
     return memory
-
 
 def save_memory(memory):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memory, f, ensure_ascii=False, indent=2)
 
-
 def add_memory(text):
     memory = load_memory()
-    memories = memory.get("memories", [])
-
-    if text and text not in memories:
-        memories.append(text)
-
-    memory["memories"] = memories[-100:]
+    if text and text not in memory["memories"]:
+        memory["memories"].append(text)
+    memory["memories"] = memory["memories"][-80:]
     save_memory(memory)
 
-
 def memory_text():
-    memory = load_memory()
-    memories = memory.get("memories", [])
-    return "\n".join([f"- {m}" for m in memories])
+    return "\n".join("- " + m for m in load_memory().get("memories", []))
 
-
-def extract_memory_request(message):
-    triggers = [
-        "jegyezd meg",
-        "emlékezz rá",
-        "mentsd el",
-        "tanuld meg",
-        "ne felejtsd el",
-        "fontos hogy",
-        "fontos, hogy",
-    ]
-
-    lower = message.lower()
-
-    for trigger in triggers:
-        if trigger in lower:
-            index = lower.find(trigger)
-            remembered = message[index + len(trigger):].strip(" :,-.")
-            if remembered:
-                return remembered
-
-    return None
-
-
-@app.route("/")
-def index():
-    return render_template_string("""
+HTML = """
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Léna</title>
-
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #fff7f8;
-            color: #2b1b1f;
-        }
-
-        .header {
-            background: #2b171c;
-            color: white;
-            padding: 22px;
-            font-size: 28px;
-            font-weight: bold;
-        }
-
-        .chat {
-            padding: 16px;
-            padding-bottom: 120px;
-        }
-
-        .message {
-            margin: 10px 0;
-            padding: 12px 14px;
-            border-radius: 16px;
-            max-width: 85%;
-            line-height: 1.4;
-            white-space: pre-wrap;
-        }
-
-        .user {
-            background: #d9ecff;
-            margin-left: auto;
-        }
-
-        .lena {
-            background: #ffffff;
-            border: 1px solid #ead6dc;
-            margin-right: auto;
-        }
-
-        .inputbar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: #ffffff;
-            border-top: 1px solid #ddd;
-            display: flex;
-            gap: 8px;
-            padding: 12px;
-        }
-
-        input {
-            flex: 1;
-            font-size: 17px;
-            padding: 12px;
-            border-radius: 12px;
-            border: 1px solid #ccc;
-        }
-
-        button {
-            font-size: 17px;
-            padding: 12px 16px;
-            border-radius: 12px;
-            border: none;
-            background: #2b171c;
-            color: white;
-            font-weight: bold;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Léna</title>
+<style>
+*{box-sizing:border-box}
+body{
+    margin:0;
+    font-family:Arial, sans-serif;
+    background:linear-gradient(180deg,#fff7ff,#f7f0ff);
+    color:#211425;
+}
+.header{
+    height:255px;
+    background:radial-gradient(circle at top,#54205f,#260b35 65%,#1b0627);
+    color:white;
+    border-bottom-left-radius:34px;
+    border-bottom-right-radius:34px;
+    padding:22px;
+    text-align:center;
+    box-shadow:0 12px 35px rgba(88,34,110,.35);
+}
+.top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:28px;
+}
+.menu{font-size:34px}
+.memory{
+    background:rgba(255,255,255,.15);
+    padding:10px 14px;
+    border-radius:24px;
+    font-size:15px;
+}
+.dot{
+    display:inline-block;
+    width:10px;height:10px;
+    background:#00e676;
+    border-radius:50%;
+    margin-left:6px;
+}
+.avatar{
+    width:105px;height:105px;
+    margin:8px auto 10px;
+    border-radius:50%;
+    background:linear-gradient(135deg,#ffd6ff,#a44cff);
+    padding:5px;
+    box-shadow:0 0 25px rgba(220,140,255,.8);
+}
+.avatar-inner{
+    width:100%;height:100%;
+    border-radius:50%;
+    background:#ffe6f6;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:56px;
+}
+h1{margin:4px 0 2px;font-size:40px}
+.subtitle{opacity:.9;font-size:16px}
+.chat{
+    padding:28px 18px 120px;
+}
+.day{
+    margin:0 auto 22px;
+    width:max-content;
+    background:#ead8ff;
+    color:#512171;
+    padding:9px 22px;
+    border-radius:20px;
+    font-weight:bold;
+}
+.row{
+    display:flex;
+    margin:16px 0;
+    gap:10px;
+    align-items:flex-end;
+}
+.row.user{justify-content:flex-end}
+.mini{
+    width:38px;height:38px;
+    border-radius:50%;
+    background:#f3c7ff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:23px;
+    flex-shrink:0;
+}
+.bubble{
+    max-width:78%;
+    padding:16px 18px;
+    border-radius:24px;
+    font-size:18px;
+    line-height:1.35;
+    box-shadow:0 8px 22px rgba(50,0,80,.08);
+}
+.lena .bubble{
+    background:white;
+    border-bottom-left-radius:8px;
+}
+.user .bubble{
+    background:linear-gradient(135deg,#efd3ff,#d8a9ff);
+    color:#3b1165;
+    border-bottom-right-radius:8px;
+    font-weight:600;
+}
+.time{
+    display:block;
+    margin-top:8px;
+    font-size:13px;
+    opacity:.45;
+}
+.inputbar{
+    position:fixed;
+    bottom:0;left:0;right:0;
+    padding:14px 14px 18px;
+    background:rgba(255,255,255,.86);
+    backdrop-filter:blur(12px);
+    display:flex;
+    gap:10px;
+    align-items:center;
+}
+.spark{
+    width:54px;height:54px;
+    border:0;
+    border-radius:50%;
+    background:#f1e0ff;
+    font-size:25px;
+}
+input{
+    flex:1;
+    height:54px;
+    border:0;
+    border-radius:22px;
+    padding:0 18px;
+    font-size:18px;
+    outline:none;
+    box-shadow:inset 0 0 0 1px #eee;
+}
+.send{
+    width:68px;height:68px;
+    border:0;
+    border-radius:50%;
+    background:linear-gradient(135deg,#b84dff,#7b20e8);
+    color:white;
+    font-size:30px;
+    box-shadow:0 8px 24px rgba(123,32,232,.35);
+}
+</style>
 </head>
-
 <body>
-    <div class="header">Léna</div>
 
-    <div id="chat" class="chat">
-        <div class="message lena">Szia ❤️ Itt vagyok.</div>
+<div class="header">
+    <div class="top">
+        <div class="menu">☰</div>
+        <div class="memory">🧠 Memória aktív <span class="dot"></span></div>
     </div>
+    <div class="avatar"><div class="avatar-inner">👩🏻</div></div>
+    <h1>Léna 💜</h1>
+    <div class="subtitle">A te személyes AI asszisztensed ✨</div>
+</div>
 
-    <div class="inputbar">
-        <input id="messageInput" type="text" placeholder="Írj Lénának..." />
-        <button onclick="sendMessage()">Küldés</button>
+<div class="chat" id="chat">
+    <div class="day">Ma</div>
+    <div class="row lena">
+        <div class="mini">👩🏻</div>
+        <div class="bubble">Szia, Léna vagyok. Kérdezz bármit, szívesen segítek! 💜<span class="time">most</span></div>
     </div>
+</div>
 
-    <script>
-        const chat = document.getElementById("chat");
-        const input = document.getElementById("messageInput");
+<div class="inputbar">
+    <button class="spark">✨</button>
+    <input id="msg" placeholder="Írj Lénának..." onkeydown="if(event.key==='Enter')sendMsg()">
+    <button class="send" onclick="sendMsg()">🎤</button>
+</div>
 
-        function addMessage(text, who) {
-            const div = document.createElement("div");
-            div.className = "message " + who;
-            div.textContent = text;
-            chat.appendChild(div);
-            window.scrollTo(0, document.body.scrollHeight);
-        }
+<script>
+const chat=document.getElementById("chat");
+const input=document.getElementById("msg");
 
-        async function sendMessage() {
-            const text = input.value.trim();
-            if (!text) return;
+function now(){
+    const d=new Date();
+    return d.getHours().toString().padStart(2,'0')+":"+d.getMinutes().toString().padStart(2,'0');
+}
 
-            addMessage(text, "user");
-            input.value = "";
+function add(text, who){
+    const row=document.createElement("div");
+    row.className="row "+who;
+    if(who==="lena"){
+        row.innerHTML='<div class="mini">👩🏻</div><div class="bubble">'+text+'<span class="time">'+now()+'</span></div>';
+    }else{
+        row.innerHTML='<div class="bubble">'+text+'<span class="time">'+now()+' ✓✓</span></div>';
+    }
+    chat.appendChild(row);
+    window.scrollTo(0,document.body.scrollHeight);
+}
 
-            addMessage("Gondolkodom...", "lena");
+async function sendMsg(){
+    const text=input.value.trim();
+    if(!text)return;
+    input.value="";
+    add(text,"user");
 
-            try {
-                const response = await fetch("/chat", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ message: text })
-                });
+    const thinking="Gondolkodom...";
+    add(thinking,"lena");
+    const last=chat.lastChild.querySelector(".bubble");
 
-                const data = await response.json();
-
-                const thinking = chat.lastChild;
-                thinking.textContent = data.reply || "Nem kaptam választ.";
-            } catch (err) {
-                const thinking = chat.lastChild;
-                thinking.textContent = "Hiba történt. Nem tudtam válaszolni.";
-            }
-        }
-
-        input.addEventListener("keydown", function(event) {
-            if (event.key === "Enter") {
-                sendMessage();
-            }
+    try{
+        const res=await fetch("/chat",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({message:text})
         });
-    </script>
+        const data=await res.json();
+        last.innerHTML=(data.reply || "Nem kaptam választ.")+'<span class="time">'+now()+'</span>';
+    }catch(e){
+        last.innerHTML='Hiba történt. Próbáld újra. <span class="time">'+now()+'</span>';
+    }
+}
+</script>
+
 </body>
 </html>
-""")
+"""
 
+@app.route("/")
+def index():
+    return render_template_string(HTML)
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    try:
-        data = request.get_json(force=True)
-        user_message = data.get("message", "").strip()
+    user_message = request.json.get("message", "").strip()
 
-        if not user_message:
-            return jsonify({"reply": "Nem kaptam üzenetet."})
+    system_prompt = f"""
+Te Léna vagy, magyarul beszélő, kedves személyes asszisztens.
+Röviden, természetesen válaszolj.
 
-        memory_to_save = extract_memory_request(user_message)
-        if memory_to_save:
-            add_memory(memory_to_save)
+Memóriád:
+{memory_text()}
 
-        memories = memory_text()
-
-        system_prompt = f"""
-Te Léna vagy, Ági és Bea magyar nyelvű segítő asszisztense.
-
-Mindig magyarul válaszolj.
-Légy kedves, természetes, rövid és segítőkész.
-Ha Bea írja, hogy „Bea vagyok”, akkor Beának beszélsz.
-Ha Ági írja, hogy „Ági vagyok”, akkor Áginak beszélsz.
-
-Fontos emlékek:
-{memories}
+Ha a felhasználó azt kéri, hogy jegyezz meg valamit, akkor válaszolj úgy, mintha megjegyezted volna.
 """
 
+    if user_message.lower().startswith("jegyezd meg"):
+        add_memory(user_message.replace("Jegyezd meg", "").replace("jegyezd meg", "").strip(" :.!"))
+        return jsonify({"reply": "Megjegyeztem 💜"})
+
+    try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.6,
+                {"role": "user", "content": user_message}
+            ]
         )
-
-        reply = response.choices[0].message.content.strip()
-
-        if not reply:
-            reply = "Nem kaptam választ."
-
-        return jsonify({"reply": reply})
-
+        reply = response.choices[0].message.content
     except Exception as e:
-        print("HIBA:", str(e), flush=True)
-        return jsonify({"reply": "Nem kaptam választ.", "error": str(e)}), 500
+        reply = "Most nem sikerült válaszolnom, de itt vagyok 💜"
 
-
-@app.route("/memory", methods=["GET"])
-def memory():
-    return jsonify(load_memory())
-
-
-@app.route("/add_memory", methods=["POST"])
-def add_memory_route():
-    try:
-        data = request.get_json(force=True)
-        text = data.get("text", "").strip()
-
-        if not text:
-            return jsonify({"ok": False, "message": "Nincs mit elmenteni."})
-
-        add_memory(text)
-        return jsonify({"ok": True, "message": "Elmentve.", "memory": load_memory()})
-
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
+    return jsonify({"reply": reply})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
