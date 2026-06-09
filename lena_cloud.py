@@ -385,7 +385,7 @@ function speak(text){
 </body>
 </html>
 
-"""@app.route("/")
+
 
 def home():
     return render_template_string(HTML)
