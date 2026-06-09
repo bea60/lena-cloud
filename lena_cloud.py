@@ -1,36 +1,4 @@
-Skip to content
-bea60
-lena-cloud
-Repository navigation
-Code
-Issues
-Pull requests
-Actions
-Projects
-Wiki
-Security and quality
-Insights
-Settings
-Files
-Go to file
-t
-T
-Procfile
-lena_cloud.py
-requirements.txt
-lena-cloud
-/lena_cloud.py
-bea60
-bea60
-Update lena_cloud.py
-252ff57
- · 
-now
 
-Code
-
-Blame
-250 lines (193 loc) · 7.3 KB
 import os
 import json
 from flask import Flask, request, jsonify, render_template_string
