@@ -60,4 +60,4 @@ def memory_text():
 
 def extract_memory_request(message):
     triggers = [
-        "jeg
+       
