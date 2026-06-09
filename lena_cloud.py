@@ -89,10 +89,140 @@ def index():
 <html lang="hu">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Léna</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #fff7f8;
+            color: #2b1b1f;
+        }
+
+        .header {
+            background: #2b171c;
+            color: white;
+            padding: 22px;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .chat {
+            padding: 16px;
+            padding-bottom: 120px;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 12px 14px;
+            border-radius: 16px;
+            max-width: 85%;
+            line-height: 1.4;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            background: #d9ecff;
+            margin-left: auto;
+        }
+
+        .lena {
+            background: #ffffff;
+            border: 1px solid #ead6dc;
+            margin-right: auto;
+        }
+
+        .inputbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+        }
+
+        input {
+            flex: 1;
+            font-size: 17px;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            font-size: 17px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: none;
+            background: #2b171c;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
 </head>
+
 <body>
-    <h2>Léna cloud működik ✅</h2>
+    <div class="header">Léna</div>
+
+    <div id="chat" class="chat">
+        <div class="message lena">Szia ❤️ Itt vagyok.</div>
+    </div>
+
+    <div class="inputbar">
+        <input id="messageInput" type="text" placeholder="Írj Lénának..." />
+        <button onclick="sendMessage()">Küldés</button>
+    </div>
+
+    <script>
+        const chat = document.getElementById("chat");
+        const input = document.getElementById("messageInput");
+
+        function addMessage(text, who) {
+            const div = document.createElement("div");
+            div.className = "message " + who;
+            div.textContent = text;
+            chat.appendChild(div);
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text) return;
+
+            addMessage(text, "user");
+            input.value = "";
+
+            addMessage("Gondolkodom...", "lena");
+
+            try {
+                const response = await fetch("/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ message: text })
+                });
+
+                const data = await response.json();
+
+                const thinking = chat.lastChild;
+                thinking.textContent = data.reply || "Nem kaptam választ.";
+            } catch (err) {
+                const thinking = chat.lastChild;
+                thinking.textContent = "Hiba történt. Nem tudtam válaszolni.";
+            }
+        }
+
+        input.addEventListener("keydown", function(event) {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        });
+    </script>
 </body>
 </html>
 """)
