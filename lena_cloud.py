@@ -185,3 +185,66 @@ function speak(text){
     if(!window.speechSynthesis) return;
 
     speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "hu-HU";
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    speechSynthesis.speak(utterance);
+}
+</script>
+</body>
+</html>
+"""
+
+
+@app.route("/")
+def home():
+    return render_template_string(HTML)
+
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json(force=True)
+    message = data.get("message", "").strip()
+
+    if not message:
+        return jsonify({"answer": "Írj vagy mondj valamit, és válaszolok. ❤️"})
+
+    fact = extract_memory_request(message)
+
+    if fact:
+        add_memory(fact)
+        return jsonify({"answer": f"Rendben ❤️ Elmentettem: {fact}"})
+
+    memories = memory_text()
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": f"""
+Te Léna vagy, kedves, magyar nyelvű AI asszisztens.
+Röviden, melegen és érthetően válaszolj.
+
+Léna hosszú távú memóriája:
+{memories}
+
+Ha a felhasználó azt kérdezi, mit tudsz róla, akkor a fenti memóriából válaszolj.
+"""
+            },
+            {
+                "role": "user",
+                "content": message
+            }
+        ]
+    )
+
+    answer = response.choices[0].message.content
+    return jsonify({"answer": answer})
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
