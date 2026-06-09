@@ -392,6 +392,7 @@ def home():
 
 
 @app.route("/ask", methods=["POST"])
+
 def ask():
     data = request.get_json() or {}
     message = data.get("message", "").strip()
