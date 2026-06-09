@@ -384,6 +384,51 @@ function speak(text){
 </script>
 </body>
 </html>
-"""
+"""@app.route("/")
+def home():
+    return render_template_string(HTML)
+
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json() or {}
+    message = data.get("message", "").strip()
+
+    if not message:
+        return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
+
+    fact = extract_memory_request(message)
+    if fact:
+        add_memory(fact)
+        return jsonify({"answer": "Megjegyeztem. 💜"})
+
+    memories = memory_text()
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Te Léna vagy, egy kedves, magyar nyelvű személyes AI asszisztens. "
+                        "Röviden, természetesen, melegen válaszolj. "
+                        "Ezek a hosszú távú emlékek rólatok:\n"
+                        + memories
+                    )
+                },
+                {"role": "user", "content": message}
+            ]
+        )
+
+        answer = response.choices[0].message.content
+        return jsonify({"answer": answer})
+
+    except Exception as e:
+        return jsonify({"answer": "Most nem sikerült válaszolnom. Ellenőrizd az OpenAI API kulcsot vagy a Railway logot."})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
    
  
