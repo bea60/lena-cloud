@@ -37,6 +37,7 @@ def save_memory(memory):
 
 def add_memory(text):
     memory = load_memory()
+    text = text.strip()
     if text and text not in memory["memories"]:
         memory["memories"].append(text)
     memory["memories"] = memory["memories"][-80:]
@@ -54,49 +55,49 @@ HTML = """
 <title>Léna</title>
 <style>
 *{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Arial,sans-serif}
 body{
-    margin:0;
-    font-family:Arial, sans-serif;
     background:linear-gradient(180deg,#fff7ff,#f7f0ff);
     color:#211425;
+    padding-bottom:96px;
 }
 .header{
-    height:255px;
-    background:radial-gradient(circle at top,#54205f,#260b35 65%,#1b0627);
+    height:205px;
+    background:radial-gradient(circle at top,#5b2168,#2a0d39 65%,#1b0627);
     color:white;
-    border-bottom-left-radius:34px;
-    border-bottom-right-radius:34px;
-    padding:22px;
+    border-bottom-left-radius:30px;
+    border-bottom-right-radius:30px;
+    padding:14px 20px 18px;
     text-align:center;
-    box-shadow:0 12px 35px rgba(88,34,110,.35);
+    box-shadow:0 10px 28px rgba(88,34,110,.30);
 }
 .top{
     display:flex;
     justify-content:space-between;
     align-items:center;
-    font-size:28px;
+    height:34px;
 }
-.menu{font-size:34px}
+.menu{font-size:28px}
 .memory{
-    background:rgba(255,255,255,.15);
-    padding:10px 14px;
-    border-radius:24px;
-    font-size:15px;
+    background:rgba(255,255,255,.14);
+    padding:8px 12px;
+    border-radius:22px;
+    font-size:13px;
 }
 .dot{
     display:inline-block;
-    width:10px;height:10px;
+    width:9px;height:9px;
     background:#00e676;
     border-radius:50%;
     margin-left:6px;
 }
 .avatar{
-    width:105px;height:105px;
-    margin:8px auto 10px;
+    width:82px;height:82px;
+    margin:4px auto 8px;
     border-radius:50%;
     background:linear-gradient(135deg,#ffd6ff,#a44cff);
     padding:5px;
-    box-shadow:0 0 25px rgba(220,140,255,.8);
+    box-shadow:0 0 22px rgba(220,140,255,.75);
 }
 .avatar-inner{
     width:100%;height:100%;
@@ -105,25 +106,32 @@ body{
     display:flex;
     align-items:center;
     justify-content:center;
-    font-size:56px;
+    font-size:43px;
 }
-h1{margin:4px 0 2px;font-size:40px}
-.subtitle{opacity:.9;font-size:16px}
+h1{
+    margin:2px 0 2px;
+    font-size:36px;
+    line-height:1.05;
+}
+.subtitle{
+    opacity:.92;
+    font-size:16px;
+}
 .chat{
-    padding:28px 18px 120px;
+    padding:20px 18px 20px;
 }
 .day{
-    margin:0 auto 22px;
+    margin:0 auto 18px;
     width:max-content;
     background:#ead8ff;
     color:#512171;
-    padding:9px 22px;
-    border-radius:20px;
+    padding:9px 24px;
+    border-radius:22px;
     font-weight:bold;
 }
 .row{
     display:flex;
-    margin:16px 0;
+    margin:14px 0;
     gap:10px;
     align-items:flex-end;
 }
@@ -165,8 +173,8 @@ h1{margin:4px 0 2px;font-size:40px}
 .inputbar{
     position:fixed;
     bottom:0;left:0;right:0;
-    padding:14px 14px 18px;
-    background:rgba(255,255,255,.86);
+    padding:12px 12px 16px;
+    background:rgba(255,255,255,.90);
     backdrop-filter:blur(12px);
     display:flex;
     gap:10px;
@@ -190,12 +198,12 @@ input{
     box-shadow:inset 0 0 0 1px #eee;
 }
 .send{
-    width:68px;height:68px;
+    width:60px;height:60px;
     border:0;
     border-radius:50%;
     background:linear-gradient(135deg,#b84dff,#7b20e8);
     color:white;
-    font-size:30px;
+    font-size:28px;
     box-shadow:0 8px 24px rgba(123,32,232,.35);
 }
 </style>
@@ -223,7 +231,7 @@ input{
 <div class="inputbar">
     <button class="spark">✨</button>
     <input id="msg" placeholder="Írj Lénának..." onkeydown="if(event.key==='Enter')sendMsg()">
-    <button class="send" onclick="sendMsg()">🎤</button>
+    <button class="send" onclick="sendMsg()">➤</button>
 </div>
 
 <script>
@@ -235,13 +243,18 @@ function now(){
     return d.getHours().toString().padStart(2,'0')+":"+d.getMinutes().toString().padStart(2,'0');
 }
 
+function safeText(text){
+    return text.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+}
+
 function add(text, who){
     const row=document.createElement("div");
     row.className="row "+who;
+    const clean=safeText(text);
     if(who==="lena"){
-        row.innerHTML='<div class="mini">👩🏻</div><div class="bubble">'+text+'<span class="time">'+now()+'</span></div>';
+        row.innerHTML='<div class="mini">👩🏻</div><div class="bubble">'+clean+'<span class="time">'+now()+'</span></div>';
     }else{
-        row.innerHTML='<div class="bubble">'+text+'<span class="time">'+now()+' ✓✓</span></div>';
+        row.innerHTML='<div class="bubble">'+clean+'<span class="time">'+now()+' ✓✓</span></div>';
     }
     chat.appendChild(row);
     window.scrollTo(0,document.body.scrollHeight);
@@ -253,8 +266,7 @@ async function sendMsg(){
     input.value="";
     add(text,"user");
 
-    const thinking="Gondolkodom...";
-    add(thinking,"lena");
+    add("Gondolkodom...","lena");
     const last=chat.lastChild.querySelector(".bubble");
 
     try{
@@ -264,7 +276,7 @@ async function sendMsg(){
             body:JSON.stringify({message:text})
         });
         const data=await res.json();
-        last.innerHTML=(data.reply || "Nem kaptam választ.")+'<span class="time">'+now()+'</span>';
+        last.innerHTML=safeText(data.reply || "Nem kaptam választ.")+'<span class="time">'+now()+'</span>';
     }catch(e){
         last.innerHTML='Hiba történt. Próbáld újra. <span class="time">'+now()+'</span>';
     }
@@ -282,19 +294,32 @@ def index():
 @app.route("/chat", methods=["POST"])
 def chat():
     user_message = request.json.get("message", "").strip()
+    low = user_message.lower()
 
     system_prompt = f"""
 Te Léna vagy, magyarul beszélő, kedves személyes asszisztens.
 Röviden, természetesen válaszolj.
+Ne mondd mindig, hogy "miben segíthetek".
+Ha a választ tudod a memóriából, válaszolj magabiztosan.
 
 Memóriád:
 {memory_text()}
-
-Ha a felhasználó azt kéri, hogy jegyezz meg valamit, akkor válaszolj úgy, mintha megjegyezted volna.
 """
 
-    if user_message.lower().startswith("jegyezd meg"):
-        add_memory(user_message.replace("Jegyezd meg", "").replace("jegyezd meg", "").strip(" :.!"))
+    memory_triggers = [
+        "jegyezd meg",
+        "emlékezz erre",
+        "mentsd el",
+        "tárold el",
+        "ne felejtsd el"
+    ]
+
+    if any(low.startswith(t) for t in memory_triggers):
+        cleaned = user_message
+        for t in memory_triggers:
+            cleaned = cleaned.replace(t, "", 1).replace(t.capitalize(), "", 1)
+        cleaned = cleaned.strip(" :.!,-")
+        add_memory(cleaned)
         return jsonify({"reply": "Megjegyeztem 💜"})
 
     try:
@@ -306,7 +331,7 @@ Ha a felhasználó azt kéri, hogy jegyezz meg valamit, akkor válaszolj úgy, m
             ]
         )
         reply = response.choices[0].message.content
-    except Exception as e:
+    except Exception:
         reply = "Most nem sikerült válaszolnom, de itt vagyok 💜"
 
     return jsonify({"reply": reply})
