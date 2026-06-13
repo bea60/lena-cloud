@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 import requests
@@ -8,23 +9,6 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
 
-def get_weather(city="Petah Tikva"):
-    try:
-        url = (
-            f"https://api.openweathermap.org/data/2.5/weather"
-            f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=hu"
-        )
-
-        r = requests.get(url, timeout=10)
-        data = r.json()
-
-        temp = round(data["main"]["temp"])
-        desc = data["weather"][0]["description"]
-
-        return f"{city} városában most {temp} fok van, {desc}."
-
-    except Exception:
-        return None
 MEMORY_FILE = "memory.json"
 
 DEFAULT_MEMORIES = [
@@ -36,6 +20,95 @@ DEFAULT_MEMORIES = [
     "Bea azt szereti, ha teljes, egyben cserélhető kódot kap.",
     "Léna magyarul, kedvesen, röviden válaszol."
 ]
+
+
+def get_weather(city="Petah Tikva"):
+    try:
+        if not WEATHER_API_KEY:
+            return "Hiányzik az OPENWEATHER_API_KEY a Railway változók közül."
+
+        url = (
+            "https://api.openweathermap.org/data/2.5/weather"
+            f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=hu"
+        )
+
+        r = requests.get(url, timeout=10)
+        data = r.json()
+
+        if r.status_code != 200:
+            return f"Nem találtam időjárást erre a városra: {city}."
+
+        temp = round(data["main"]["temp"])
+        feels = round(data["main"].get("feels_like", data["main"]["temp"]))
+        desc = data["weather"][0]["description"]
+        name = data.get("name", city)
+
+        return f"{name} városában most {temp} fok van, {desc}. Hőérzet: {feels} fok."
+
+    except Exception as e:
+        print("WEATHER HIBA:", e)
+        return "Most nem sikerült lekérnem az időjárást."
+
+
+def extract_city_simple(message):
+    text = message.strip()
+    lower = text.lower()
+
+    # Magyar ragok levágása egyszerűen: Tel Avivban -> Tel Aviv, Budapesten -> Budapest
+    patterns = [
+        r"(?:idő|ido|időjárás|idojaras).*?(?:van|lesz)?\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
+        r"(?:milyen|mennyi).*?\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
+        r"(?:és|es)\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
+    ]
+
+    for p in patterns:
+        m = re.search(p, lower, re.IGNORECASE)
+        if m:
+            city = m.group(1).strip()
+            city = re.sub(r"\b(milyen|mennyi|az|a|idő|ido|időjárás|idojaras|most|van|lesz|ott)\b", "", city, flags=re.IGNORECASE).strip()
+            city = city.strip(" ?.!,:;")
+            city = re.sub(r"(ban|ben|on|en|ön|n)$", "", city, flags=re.IGNORECASE).strip()
+            if city and len(city) >= 2:
+                return city.title()
+
+    # Ha nem talál várost, marad Bea alapvárosa
+    return "Petah Tikva"
+
+
+def extract_city_with_ai(message):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Feladatod: a felhasználó magyar mondatából csak a város nevét add vissza. "
+                        "Ha nincs benne város, válaszolj pontosan ezzel: Petah Tikva. "
+                        "Ne írj magyarázatot, csak a város nevét. "
+                        "Példák: 'Milyen idő van Tel Avivban?' -> Tel Aviv; "
+                        "'Budapesten milyen idő van?' -> Budapest; "
+                        "'És Eilatban?' -> Eilat."
+                    )
+                },
+                {"role": "user", "content": message}
+            ],
+            temperature=0
+        )
+        city = response.choices[0].message.content.strip()
+        city = city.replace(".", "").strip()
+        if city:
+            return city
+    except Exception as e:
+        print("CITY AI HIBA:", e)
+
+    return extract_city_simple(message)
+
+
+def is_weather_question(message):
+    lower = message.lower()
+    words = ["idő", "ido", "időjárás", "idojaras", "hány fok", "hany fok", "meleg", "hideg", "esik", "eső", "eso"]
+    return any(w in lower for w in words)
 
 
 def load_memory():
@@ -428,12 +501,11 @@ def ask():
     if not message:
         return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
 
-    lower = message.lower()
+    if is_weather_question(message):
+        city = extract_city_with_ai(message)
+        weather = get_weather(city)
+        return jsonify({"answer": weather})
 
-    if "idő" in lower or "ido" in lower:
-        weather = get_weather("Petah Tikva")
-        if weather:
-            return jsonify({"answer": weather})
     fact = extract_memory_request(message)
     if fact:
         add_memory(fact)
@@ -451,7 +523,7 @@ def ask():
                         "Te Léna vagy, egy kedves magyar AI asszisztens. "
                         "Mindig magyarul válaszolj. "
                         "Röviden, természetesen, melegen válaszolj. "
-                        "Ezek az emlékeid:\\n"
+                        "Ezek az emlékeid:\n"
                         + memories
                     )
                 },
