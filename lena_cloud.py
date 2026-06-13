@@ -369,9 +369,24 @@ function startMic(){
 
     recognition.start();
 }
-
 function speak(text){
-    if(!window.speechSynthesis) return;
+    console.log("SPEAK:", text);
+
+    if (window.AndroidSpeech) {
+        window.AndroidSpeech.speak(text);
+        return;
+    }
+
+    if (window.speechSynthesis) {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "hu-HU";
+        u.rate = 1;
+        u.pitch = 1;
+        speechSynthesis.speak(u);
+    }
+}
+
 
     speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
