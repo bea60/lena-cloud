@@ -1,3 +1,84 @@
+import os
+import json
+from flask import Flask, request, jsonify, render_template_string
+from openai import OpenAI
+
+app = Flask(__name__)
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+MEMORY_FILE = "memory.json"
+
+DEFAULT_MEMORIES = [
+    "A felhasználó Bea.",
+    "Ági Bea párja.",
+    "Bea építi a telefonos Léna projektet.",
+    "Léna telefonon fut Android appban.",
+    "Baba, másik nevén Yoda, egy sphynx cica.",
+    "Bea azt szereti, ha teljes, egyben cserélhető kódot kap.",
+    "Léna magyarul, kedvesen, röviden válaszol."
+]
+
+
+def load_memory():
+    memory = {"memories": DEFAULT_MEMORIES.copy()}
+
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                for item in saved.get("memories", []):
+                    if item not in memory["memories"]:
+                        memory["memories"].append(item)
+        except Exception:
+            pass
+
+    return memory
+
+
+def save_memory(memory):
+    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(memory, f, ensure_ascii=False, indent=2)
+
+
+def add_memory(text):
+    memory = load_memory()
+    memories = memory.get("memories", [])
+
+    if text and text not in memories:
+        memories.append(text)
+
+    memory["memories"] = memories[-80:]
+    save_memory(memory)
+
+
+def memory_text():
+    memories = load_memory().get("memories", [])
+    return "\n".join([f"- {m}" for m in memories])
+
+
+def extract_memory_request(message):
+    triggers = [
+        "jegyezd meg, hogy",
+        "jegyezd meg hogy",
+        "emlékezz rá, hogy",
+        "emlékezz rá hogy",
+        "mentsd el, hogy",
+        "mentsd el hogy",
+        "ne felejtsd el, hogy",
+        "ne felejtsd el hogy"
+    ]
+
+    lower = message.lower()
+
+    for trigger in triggers:
+        if trigger in lower:
+            index = lower.find(trigger)
+            fact = message[index + len(trigger):].strip()
+            return fact.strip(".! ")
+
+    return None
+
+
 HTML = """
 <!DOCTYPE html>
 <html lang="hu">
@@ -184,7 +265,7 @@ html, body {
 
     <div id="memoryPanel">
         <b>Mit jegyezzek meg?</b><br><br>
-        <textarea id="memoryText" placeholder="Például: jegyezd meg, hogy Baba szereti a takarót"></textarea>
+        <textarea id="memoryText" placeholder="Például: Baba szereti a takarót"></textarea>
         <button onclick="saveMemory()">Megjegyzem</button>
         <button onclick="toggleMemory()">Bezárás</button>
     </div>
@@ -313,6 +394,8 @@ function startVoice(){
 </body>
 </html>
 """
+
+
 @app.route("/")
 def home():
     return render_template_string(HTML)
