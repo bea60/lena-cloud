@@ -2,10 +2,29 @@ import os
 import json
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
+import requests
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
 
+def get_weather(city="Petah Tikva"):
+    try:
+        url = (
+            f"https://api.openweathermap.org/data/2.5/weather"
+            f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=hu"
+        )
+
+        r = requests.get(url, timeout=10)
+        data = r.json()
+
+        temp = round(data["main"]["temp"])
+        desc = data["weather"][0]["description"]
+
+        return f"{city} városában most {temp} fok van, {desc}."
+
+    except Exception:
+        return None
 MEMORY_FILE = "memory.json"
 
 DEFAULT_MEMORIES = [
@@ -405,7 +424,13 @@ def home():
 def ask():
     data = request.get_json() or {}
     message = data.get("message", "").strip()
+lower = message.lower()
 
+if "idő" in lower or "ido" in lower:
+    weather = get_weather("Petah Tikva")
+
+    if weather:
+        return jsonify({"answer": weather})
     if not message:
         return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
 
