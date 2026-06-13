@@ -425,7 +425,7 @@ def ask():
     data = request.get_json() or {}
     message = data.get("message", "").strip()
     lower = message.lower()
-if "idő" in lower or "ido" in lower:
+    if "idő" in lower or "ido" in lower:
     weather = get_weather("Petah Tikva")
     
     if weather:
