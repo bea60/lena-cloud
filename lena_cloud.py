@@ -379,22 +379,14 @@ function speak(text){
 
     if (window.speechSynthesis) {
         speechSynthesis.cancel();
+
         const u = new SpeechSynthesisUtterance(text);
         u.lang = "hu-HU";
         u.rate = 1;
         u.pitch = 1;
+
         speechSynthesis.speak(u);
     }
-}
-
-
-    speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "hu-HU";
-    utterance.rate = 1;
-    utterance.pitch = 1;
-
-    speechSynthesis.speak(utterance);
 }
 </script>
 </body>
