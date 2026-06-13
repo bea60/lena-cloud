@@ -8,15 +8,31 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 MEMORY_FILE = "memory.json"
 
+DEFAULT_MEMORIES = [
+    "A felhasználó Bea.",
+    "Ági Bea párja.",
+    "Bea építi a telefonos Léna projektet.",
+    "Léna telefonon fut Android appban.",
+    "Baba, másik nevén Yoda, egy sphynx cica.",
+    "Bea azt szereti, ha teljes, egyben cserélhető kódot kap, nem apró kutyulást.",
+    "Léna magyarul, kedvesen, röviden válaszol."
+]
+
 
 def load_memory():
-    if not os.path.exists(MEMORY_FILE):
-        return {"memories": []}
-    try:
-        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"memories": []}
+    memory = {"memories": DEFAULT_MEMORIES.copy()}
+
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                for item in saved.get("memories", []):
+                    if item not in memory["memories"]:
+                        memory["memories"].append(item)
+        except Exception:
+            pass
+
+    return memory
 
 
 def save_memory(memory):
@@ -31,7 +47,7 @@ def add_memory(text):
     if text and text not in memories:
         memories.append(text)
 
-    memory["memories"] = memories[-50:]
+    memory["memories"] = memories[-80:]
     save_memory(memory)
 
 
@@ -198,13 +214,6 @@ body {
     background: #e7dcff;
 }
 
-.time {
-    display: block;
-    margin-top: 8px;
-    color: #aaa;
-    font-size: 16px;
-}
-
 .inputbar {
     position: fixed;
     bottom: 0;
@@ -223,220 +232,4 @@ body {
     height: 62px;
     border-radius: 50%;
     border: 0;
-    background: #f0dcff;
-    font-size: 30px;
-}
-
-#text {
-    flex: 1;
-    min-width: 0;
-    border: 1px solid #eee;
-    border-radius: 30px;
-    padding: 18px 22px;
-    font-size: 21px;
-    outline: none;
-}
-
-.send-btn {
-    width: 62px;
-    height: 62px;
-    border-radius: 50%;
-    border: 0;
-    background: linear-gradient(135deg, #ba35ff, #7b22ff);
-    color: white;
-    font-size: 30px;
-    flex-shrink: 0;
-}
-</style>
-</head>
-
-<body>
-<div class="app">
-
-    <div class="topbar">Léna</div>
-
-    <div class="hero">
-        <div class="avatar-big">👩🏻</div>
-        <div class="hero-title">Léna 💜</div>
-        <div class="hero-sub">A te személyes AI asszisztensed ✨</div>
-    </div>
-
-    <div class="today">Ma</div>
-
-    <div id="chat" class="chat">
-        <div class="row">
-            <div class="mini-avatar">👩🏻</div>
-            <div class="bubble">
-                Szia, Léna vagyok. Kérdezz bármit, szívesen segítek! 💜
-                <span class="time">most</span>
-            </div>
-        </div>
-    </div>
-
-    <div class="inputbar">
-        <button class="round-btn" onclick="startMic()">✨</button>
-        <input id="text" placeholder="Írj Lénának..." onkeydown="if(event.key==='Enter') sendMessage()">
-        <button id="send" class="send-btn" onclick="sendMessage()">➤</button>
-    </div>
-
-</div>
-
-<script>
-let recognition = null;
-
-function addMessage(text, who){
-    const chat = document.getElementById("chat");
-    const row = document.createElement("div");
-    row.className = "row " + (who === "user" ? "user" : "");
-
-    if(who !== "user"){
-        const av = document.createElement("div");
-        av.className = "mini-avatar";
-        av.innerText = "👩🏻";
-        row.appendChild(av);
-    }
-
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-    bubble.innerText = text;
-
-    row.appendChild(bubble);
-    chat.appendChild(row);
-    chat.scrollTop = chat.scrollHeight;
-    return bubble;
-}
-
-async function sendMessage(){
-    const input = document.getElementById("text");
-    const btn = document.getElementById("send");
-    const text = input.value.trim();
-    if(!text) return;
-
-    addMessage(text, "user");
-    input.value = "";
-    btn.disabled = true;
-
-    const thinking = addMessage("Léna gondolkodik...", "lena");
-
-    try{
-        const res = await fetch("/ask", {
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({message:text})
-        });
-
-        const data = await res.json();
-        const answer = data.answer || "Nem kaptam választ.";
-        thinking.innerText = answer;
-        speak(answer);
-    }catch(e){
-        thinking.innerText = "Hiba történt a válasz közben.";
-    }
-
-    btn.disabled = false;
-}
-
-function startMic(){
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if(!SpeechRecognition){
-        alert("Ez a böngésző nem támogatja a beszédfelismerést. Chrome ajánlott.");
-        return;
-    }
-
-    recognition = new SpeechRecognition();
-    recognition.lang = "hu-HU";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = function(){
-        document.getElementById("text").placeholder = "Hallgatlak...";
-    };
-
-    recognition.onresult = function(event){
-        const spoken = event.results[0][0].transcript;
-        document.getElementById("text").value = spoken;
-        sendMessage();
-    };
-
-    recognition.onerror = function(){
-        alert("Nem sikerült felismerni a hangot.");
-    };
-
-    recognition.onend = function(){
-        document.getElementById("text").placeholder = "Írj Lénának...";
-    };
-
-    recognition.start();
-}
-function speak(text){
-    console.log("SPEAK:", text);
-
-    if (window.AndroidSpeech) {
-        window.AndroidSpeech.speak(text);
-        return;
-    }
-
-    if (window.speechSynthesis) {
-        speechSynthesis.cancel();
-
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = "hu-HU";
-        u.rate = 1;
-        u.pitch = 1;
-
-        speechSynthesis.speak(u);
-    }
-}
-</script>
-</body>
-</html>
-"""
-
-
-@app.route("/")
-def home():
-    return render_template_string(HTML)
-
-
-@app.route("/ask", methods=["POST"])
-def ask():
-    data = request.get_json() or {}
-    message = data.get("message", "").strip()
-
-    if not message:
-        return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
-
-    fact = extract_memory_request(message)
-    if fact:
-        add_memory(fact)
-        return jsonify({"answer": "Megjegyeztem. 💜"})
-
-    memories = memory_text()
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Te Léna vagy, egy kedves, magyar nyelvű személyes AI asszisztens. "
-                        "Röviden, természetesen, melegen válaszolj. "
-                        "Ezek a hosszú távú emlékek rólatok:\n"
-                        + memories
-                    )
-                },
-                {"role": "user", "content": message}
-            ]
-        )
-
-        answer = response.choices[0].message.content
-        return jsonify({"answer": answer})
-
-    except Exception:
-        return jsonify({"answer": "Most nem sikerült válaszolnom. Ellenőrizd az OpenAI API kulcsot vagy a Railway logot."})
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    background: #f
