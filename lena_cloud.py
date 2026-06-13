@@ -424,15 +424,16 @@ def home():
 def ask():
     data = request.get_json() or {}
     message = data.get("message", "").strip()
-    lower = message.lower()
-    if "idő" in lower or "ido" in lower:
-    weather = get_weather("Petah Tikva")
-    
-    if weather:
-        return jsonify({"answer": weather})
+
     if not message:
         return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
 
+    lower = message.lower()
+
+    if "idő" in lower or "ido" in lower:
+        weather = get_weather("Petah Tikva")
+        if weather:
+            return jsonify({"answer": weather})
     fact = extract_memory_request(message)
     if fact:
         add_memory(fact)
