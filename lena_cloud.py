@@ -1,6 +1,7 @@
 import os
 import json
 import re
+from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 import requests
@@ -113,66 +114,18 @@ def is_weather_question(message):
 
 def is_internet_question(message):
     lower = message.lower()
-
     keywords = [
-        "keress",
-        "keresd",
-        "nézz utána",
-        "nezz utana",
-        "interneten",
-        "google",
-        "friss",
-        "aktuális",
-        "aktualis",
-
-        "hír",
-        "hir",
-        "hírek",
-        "hirek",
-        "mai hír",
-        "mai hir",
-        "mai hírek",
-        "mai hirek",
-        "fő hír",
-        "fo hir",
-        "főhir",
-        "fohir",
-        "mi a mai fő hír",
-        "mi a mai fo hir",
-        "mi történt",
-        "mi tortent",
-        "történt ma",
-        "tortent ma",
-        "izraelben",
-        "magyarországon",
-        "magyarorszagon",
-        "világban",
-        "vilagban",
-
-        "most mennyi",
-        "árfolyam",
-        "arfolyam",
-        "bitcoin",
-        "ethereum",
-        "tőzsde",
-        "tozsde",
-        "részvény",
-        "reszveny",
-
-        "sport",
-        "meccs",
-        "ki nyerte",
-        "eredmény",
-        "eredmeny",
-
-        "választás",
-        "valasztas",
-        "menetrend",
-        "repülő",
-        "repulo",
-        "vonat"
+        "keress", "keresd", "nézz utána", "nezz utana", "interneten", "google",
+        "friss", "aktuális", "aktualis",
+        "hír", "hir", "hírek", "hirek", "mai hír", "mai hir", "mai hírek", "mai hirek",
+        "fő hír", "fo hir", "főhir", "fohir", "mi a mai fő hír", "mi a mai fo hir",
+        "mi történt", "mi tortent", "történt ma", "tortent ma",
+        "izraelben", "magyarországon", "magyarorszagon", "világban", "vilagban",
+        "most mennyi", "árfolyam", "arfolyam", "bitcoin", "ethereum",
+        "tőzsde", "tozsde", "részvény", "reszveny",
+        "sport", "meccs", "ki nyerte", "eredmény", "eredmeny",
+        "választás", "valasztas", "menetrend", "repülő", "repulo", "vonat"
     ]
-
     return any(k in lower for k in keywords)
 
 
@@ -188,82 +141,171 @@ def internet_search(message):
                         "Te Léna vagy, Bea kedves magyar AI asszisztense. "
                         "Használj élő internetes keresést friss hírekhez, árfolyamhoz, sporthoz és aktuális adatokhoz. "
                         "Magyarul válaszolj, röviden és érthetően. "
-                        "Híreknél 2-4 mondatban foglald össze a legfontosabbat. "
-                        "Ha nem találsz biztos adatot, mondd meg őszintén."
+                        "Híreknél 2-4 mondatban foglald össze a legfontosabbat."
                     )
                 },
-                {
-                    "role": "user",
-                    "content": message
-                }
+                {"role": "user", "content": message}
             ]
         )
-
         if hasattr(response, "output_text") and response.output_text:
             return response.output_text
-
         return "Találtam találatokat, de most nem sikerült szépen összefoglalnom."
-
     except Exception as e:
         print("WEB SEARCH HIBA:", e)
+        return "Most nem sikerült interneten keresnem."
 
-        try:
-            fallback = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Te Léna vagy. Magyarul válaszolj röviden. "
-                            "Mondd meg, hogy az internetes keresés most nem sikerült, "
-                            "és csak általános választ tudsz adni."
-                        )
-                    },
-                    {"role": "user", "content": message}
-                ]
-            )
-            return "Most nem sikerült élő internetes keresést használnom, de ezt tudom: " + fallback.choices[0].message.content
 
-        except Exception as e2:
-            print("WEB FALLBACK HIBA:", e2)
-            return "Most nem sikerült interneten keresnem."
+
+def today_text():
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def default_memory():
+    return {
+        "memories": DEFAULT_MEMORIES.copy(),
+        "events": []
+    }
 
 
 def load_memory():
-    memory = {"memories": DEFAULT_MEMORIES.copy()}
+    memory = default_memory()
 
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-                for item in saved.get("memories", []):
-                    if item not in memory["memories"]:
-                        memory["memories"].append(item)
-        except Exception:
-            pass
 
+            if isinstance(saved, dict):
+                for item in saved.get("memories", []):
+                    if item and item not in memory["memories"]:
+                        memory["memories"].append(item)
+
+                for item in saved.get("events", []):
+                    if item and item not in memory["events"]:
+                        memory["events"].append(item)
+
+        except Exception as e:
+            print("MEMORY LOAD HIBA:", e)
+
+    memory["memories"] = memory["memories"][-150:]
+    memory["events"] = memory["events"][-200:]
     return memory
 
 
 def save_memory(memory):
+    if not isinstance(memory, dict):
+        memory = default_memory()
+
+    memory.setdefault("memories", [])
+    memory.setdefault("events", [])
+
+    memory["memories"] = memory["memories"][-150:]
+    memory["events"] = memory["events"][-200:]
+
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memory, f, ensure_ascii=False, indent=2)
 
 
 def add_memory(text):
     memory = load_memory()
-    memories = memory.get("memories", [])
+    text = text.strip()
 
-    if text and text not in memories:
-        memories.append(text)
+    if text and text not in memory["memories"]:
+        memory["memories"].append(text)
 
-    memory["memories"] = memories[-80:]
+    save_memory(memory)
+
+
+def add_event(text):
+    memory = load_memory()
+    event = today_text() + ": " + text.strip()
+
+    if event not in memory["events"]:
+        memory["events"].append(event)
+
     save_memory(memory)
 
 
 def memory_text():
-    memories = load_memory().get("memories", [])
-    return "\n".join([f"- {m}" for m in memories])
+    memory = load_memory()
+    lines = []
+
+    lines.append("FONTOS EMLÉKEK:")
+    for m in memory.get("memories", [])[-80:]:
+        lines.append("- " + m)
+
+    lines.append("")
+    lines.append("ESEMÉNYNAPLÓ:")
+    for e in memory.get("events", [])[-50:]:
+        lines.append("- " + e)
+
+    return "\n".join(lines)
+
+
+def is_memory_question(message):
+    lower = message.lower()
+    keywords = [
+        "emlékszel", "emlekszel",
+        "mit tudsz rólam", "mit tudsz rolam",
+        "mit jegyeztél meg", "mit jegyeztel meg",
+        "mik az emlékeid", "mik az emlekeid",
+        "memória", "memoria",
+        "min dolgoztunk",
+        "ki az a", "ki az"
+    ]
+    return any(k in lower for k in keywords)
+
+
+def answer_from_memory(message):
+    memories = memory_text()
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Te Léna vagy. Csak az alábbi hosszú távú memóriából válaszolj. "
+                        "Ha nincs benne a válasz, mondd meg röviden, hogy ezt még nem jegyezted meg. "
+                        "Magyarul, kedvesen és röviden válaszolj.\n\n"
+                        "HOSSZÚ TÁVÚ MEMÓRIA:\n" + memories
+                    )
+                },
+                {"role": "user", "content": message}
+            ]
+        )
+        return response.choices[0].message.content
+
+    except Exception as e:
+        print("MEMORY ANSWER HIBA:", e)
+        return "Most nem sikerült elővennem az emlékeimet."
+
+
+def auto_memory_check(user_message, assistant_answer):
+    try:
+        prompt = (
+            "Döntsd el, van-e ebben hosszú távon hasznos emlék Bea és Léna számára. "
+            "Csak egy rövid magyar mondatot adj vissza, vagy pontosan ezt: NINCS. "
+            "Csak akkor ments, ha hónapok múlva is hasznos lehet."
+        )
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": "Felhasználó: " + user_message + "\nLéna válasza: " + assistant_answer}
+            ],
+            temperature=0
+        )
+
+        fact = response.choices[0].message.content.strip()
+        if fact and fact.upper() != "NINCS":
+            add_memory(fact)
+            add_event("Automatikus emlék mentve: " + fact)
+
+    except Exception as e:
+        print("AUTO MEMORY HIBA:", e)
 
 
 def extract_memory_request(message):
@@ -560,88 +602,4 @@ function toggleMemory(){
 
 function saveMemory(){
     const t = document.getElementById("memoryText").value.trim();
-    if(!t) return;
-
-    document.getElementById("memoryText").value = "";
-    toggleMemory();
-
-    sendToLena("jegyezd meg, hogy " + t);
-}
-
-function clearChat(){
-    document.getElementById("chat").innerHTML =
-        '<div class="bubble lena">Szia Bea, Léna vagyok. Itt vagyok veled. 💜</div>';
-}
-
-function startVoice(){
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if(!SpeechRecognition){
-        speak("A beszédfelismerés ezen a telefonon vagy böngészőben nem elérhető.");
-        return;
-    }
-
-    const rec = new SpeechRecognition();
-    rec.lang = "hu-HU";
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-
-    speak("Hallgatlak.");
-
-    rec.onresult = function(event){
-        const text = event.results[0][0].transcript;
-        sendToLena(text);
-    };
-
-    rec.onerror = function(){
-        speak("Most nem sikerült felismernem a beszédet.");
-    };
-
-    rec.start();
-}
-</script>
-
-</body>
-</html>
-"""
-
-
-@app.route("/")
-def home():
-    return render_template_string(HTML)
-
-
-@app.route("/ask", methods=["POST"])
-def ask():
-    data = request.get_json() or {}
-    message = data.get("message", "").strip()
-
-    if not message:
-        return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
-
-    if is_weather_question(message):
-        city = extract_city_with_ai(message)
-        weather = get_weather(city)
-        return jsonify({"answer": weather})
-
-    fact = extract_memory_request(message)
-    if fact:
-        add_memory(fact)
-        return jsonify({"answer": "Megjegyeztem. 💜"})
-
-    if is_internet_question(message):
-        answer = internet_search(message)
-        return jsonify({"answer": answer})
-
-    memories = memory_text()
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Te Léna vagy, egy kedves magyar AI asszisztens. "
-                        "Mindig magyarul válaszolj. "
-                        
+    if
