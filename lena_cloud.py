@@ -111,6 +111,99 @@ def is_weather_question(message):
     return any(w in lower for w in words)
 
 
+
+def is_internet_question(message):
+    lower = message.lower()
+
+    keywords = [
+        "keress",
+        "keresd",
+        "nézz utána",
+        "nezz utana",
+        "interneten",
+        "google",
+        "friss",
+        "aktuális",
+        "aktualis",
+        "mai hír",
+        "mai hir",
+        "hírek",
+        "hirek",
+        "mi történt",
+        "mi tortent",
+        "most mennyi",
+        "árfolyam",
+        "arfolyam",
+        "bitcoin",
+        "ethereum",
+        "tőzsde",
+        "tozsde",
+        "sport",
+        "meccs",
+        "ki nyerte",
+        "választás",
+        "valasztas",
+        "menetrend",
+        "repülő",
+        "repulo",
+        "vonat"
+    ]
+
+    return any(k in lower for k in keywords)
+
+
+def internet_search(message):
+    try:
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            tools=[{"type": "web_search_preview"}],
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Te Léna vagy, Bea kedves magyar AI asszisztense. "
+                        "Használj internetes keresést, ha friss vagy aktuális adat kell. "
+                        "Magyarul válaszolj, röviden és érthetően. "
+                        "Ha az adat bizonytalan, mondd meg."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ]
+        )
+
+        if hasattr(response, "output_text") and response.output_text:
+            return response.output_text
+
+        return "Találtam találatokat, de most nem sikerült szépen összefoglalnom."
+
+    except Exception as e:
+        print("WEB SEARCH HIBA:", e)
+
+        try:
+            fallback = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Te Léna vagy. Magyarul válaszolj röviden. "
+                            "Mondd meg, hogy az internetes keresés most nem sikerült, "
+                            "és csak általános választ tudsz adni."
+                        )
+                    },
+                    {"role": "user", "content": message}
+                ]
+            )
+            return "Most nem sikerült élő internetes keresést használnom, de ezt tudom: " + fallback.choices[0].message.content
+
+        except Exception as e2:
+            print("WEB FALLBACK HIBA:", e2)
+            return "Most nem sikerült interneten keresnem."
+
+
 def load_memory():
     memory = {"memories": DEFAULT_MEMORIES.copy()}
 
@@ -510,6 +603,10 @@ def ask():
     if fact:
         add_memory(fact)
         return jsonify({"answer": "Megjegyeztem. 💜"})
+
+    if is_internet_question(message):
+        answer = internet_search(message)
+        return jsonify({"answer": answer})
 
     memories = memory_text()
 
