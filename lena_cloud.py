@@ -1,7 +1,6 @@
 import os
 import json
 import re
-from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 import requests
@@ -12,27 +11,15 @@ WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
 
 MEMORY_FILE = "memory.json"
 
-DEFAULT_MEMORY = {
-    "people": {
-        "Bea": "A felhasználó.",
-        "Ági": "Bea párja.",
-        "Baba": "Másik nevén Yoda, egy sphynx cica."
-    },
-    "preferences": {
-        "nyelv": "Léna mindig magyarul válaszol.",
-        "stílus": "Kedvesen, röviden, természetesen válaszol.",
-        "kód": "Bea azt szereti, ha teljes, egyben cserélhető kódot kap."
-    },
-    "projects": {
-        "telefonos Léna": "Bea telefonos AI asszisztenst épít Android appban, Railway backenddel és GitHub mentéssel."
-    },
-    "facts": [
-        "Bea építi a telefonos Léna projektet.",
-        "Léna telefonon fut Android appban.",
-        "Léna tud időjárást, internetes keresést, híreket és árfolyamokat keresni."
-    ],
-    "events": []
-}
+DEFAULT_MEMORIES = [
+    "A felhasználó Bea.",
+    "Ági Bea párja.",
+    "Bea építi a telefonos Léna projektet.",
+    "Léna telefonon fut Android appban.",
+    "Baba, másik nevén Yoda, egy sphynx cica.",
+    "Bea azt szereti, ha teljes, egyben cserélhető kódot kap.",
+    "Léna magyarul, kedvesen, röviden válaszol."
+]
 
 
 def get_weather(city="Petah Tikva"):
@@ -126,14 +113,66 @@ def is_weather_question(message):
 
 def is_internet_question(message):
     lower = message.lower()
+
     keywords = [
-        "keress", "keresd", "nézz utána", "nezz utana", "interneten", "google",
-        "friss", "aktuális", "aktualis", "hír", "hir", "hírek", "hirek",
-        "mai hír", "mai hir", "mai hírek", "mai hirek", "fő hír", "fo hir",
-        "mi történt", "mi tortent", "izraelben", "világban", "vilagban",
-        "most mennyi", "árfolyam", "arfolyam", "bitcoin", "ethereum",
-        "sport", "meccs", "ki nyerte", "eredmény", "eredmeny"
+        "keress",
+        "keresd",
+        "nézz utána",
+        "nezz utana",
+        "interneten",
+        "google",
+        "friss",
+        "aktuális",
+        "aktualis",
+
+        "hír",
+        "hir",
+        "hírek",
+        "hirek",
+        "mai hír",
+        "mai hir",
+        "mai hírek",
+        "mai hirek",
+        "fő hír",
+        "fo hir",
+        "főhir",
+        "fohir",
+        "mi a mai fő hír",
+        "mi a mai fo hir",
+        "mi történt",
+        "mi tortent",
+        "történt ma",
+        "tortent ma",
+        "izraelben",
+        "magyarországon",
+        "magyarorszagon",
+        "világban",
+        "vilagban",
+
+        "most mennyi",
+        "árfolyam",
+        "arfolyam",
+        "bitcoin",
+        "ethereum",
+        "tőzsde",
+        "tozsde",
+        "részvény",
+        "reszveny",
+
+        "sport",
+        "meccs",
+        "ki nyerte",
+        "eredmény",
+        "eredmeny",
+
+        "választás",
+        "valasztas",
+        "menetrend",
+        "repülő",
+        "repulo",
+        "vonat"
     ]
+
     return any(k in lower for k in keywords)
 
 
@@ -148,251 +187,83 @@ def internet_search(message):
                     "content": (
                         "Te Léna vagy, Bea kedves magyar AI asszisztense. "
                         "Használj élő internetes keresést friss hírekhez, árfolyamhoz, sporthoz és aktuális adatokhoz. "
-                        "Magyarul válaszolj, röviden és érthetően."
+                        "Magyarul válaszolj, röviden és érthetően. "
+                        "Híreknél 2-4 mondatban foglald össze a legfontosabbat. "
+                        "Ha nem találsz biztos adatot, mondd meg őszintén."
                     )
                 },
-                {"role": "user", "content": message}
+                {
+                    "role": "user",
+                    "content": message
+                }
             ]
         )
+
         if hasattr(response, "output_text") and response.output_text:
             return response.output_text
+
         return "Találtam találatokat, de most nem sikerült szépen összefoglalnom."
+
     except Exception as e:
         print("WEB SEARCH HIBA:", e)
-        return "Most nem sikerült interneten keresnem."
 
+        try:
+            fallback = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Te Léna vagy. Magyarul válaszolj röviden. "
+                            "Mondd meg, hogy az internetes keresés most nem sikerült, "
+                            "és csak általános választ tudsz adni."
+                        )
+                    },
+                    {"role": "user", "content": message}
+                ]
+            )
+            return "Most nem sikerült élő internetes keresést használnom, de ezt tudom: " + fallback.choices[0].message.content
 
-
-def today_text():
-    return datetime.now().strftime("%Y-%m-%d")
-
-
-def normalize_memory(memory):
-    if not isinstance(memory, dict):
-        memory = {}
-
-    result = {
-        "people": {},
-        "preferences": {},
-        "projects": {},
-        "facts": [],
-        "events": []
-    }
-
-    for key in ["people", "preferences", "projects"]:
-        result[key].update(DEFAULT_MEMORY.get(key, {}))
-
-    for key in ["facts", "events"]:
-        result[key].extend(DEFAULT_MEMORY.get(key, []))
-
-    # Régi memory.json támogatása
-    if isinstance(memory.get("memories"), list):
-        for item in memory["memories"]:
-            if item and item not in result["facts"]:
-                result["facts"].append(item)
-
-    for key in ["people", "preferences", "projects"]:
-        if isinstance(memory.get(key), dict):
-            result[key].update(memory[key])
-
-    for key in ["facts", "events"]:
-        if isinstance(memory.get(key), list):
-            for item in memory[key]:
-                if item and item not in result[key]:
-                    result[key].append(item)
-
-    result["facts"] = result["facts"][-120:]
-    result["events"] = result["events"][-200:]
-    return result
+        except Exception as e2:
+            print("WEB FALLBACK HIBA:", e2)
+            return "Most nem sikerült interneten keresnem."
 
 
 def load_memory():
+    memory = {"memories": DEFAULT_MEMORIES.copy()}
+
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-            return normalize_memory(saved)
-        except Exception as e:
-            print("MEMORY LOAD HIBA:", e)
+                for item in saved.get("memories", []):
+                    if item not in memory["memories"]:
+                        memory["memories"].append(item)
+        except Exception:
+            pass
 
-    return normalize_memory(DEFAULT_MEMORY)
+    return memory
 
 
 def save_memory(memory):
-    memory = normalize_memory(memory)
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memory, f, ensure_ascii=False, indent=2)
 
 
+def add_memory(text):
+    memory = load_memory()
+    memories = memory.get("memories", [])
+
+    if text and text not in memories:
+        memories.append(text)
+
+    memory["memories"] = memories[-80:]
+    save_memory(memory)
+
+
 def memory_text():
-    memory = load_memory()
-    lines = []
-
-    lines.append("SZEMÉLYEK:")
-    for name, desc in memory.get("people", {}).items():
-        lines.append(f"- {name}: {desc}")
-
-    lines.append("\\nPREFERENCIÁK:")
-    for key, value in memory.get("preferences", {}).items():
-        lines.append(f"- {key}: {value}")
-
-    lines.append("\\nPROJEKTEK:")
-    for key, value in memory.get("projects", {}).items():
-        lines.append(f"- {key}: {value}")
-
-    lines.append("\\nFONTOS TÉNYEK:")
-    for fact in memory.get("facts", [])[-60:]:
-        lines.append(f"- {fact}")
-
-    lines.append("\\nESEMÉNYEK:")
-    for event in memory.get("events", [])[-40:]:
-        lines.append(f"- {event}")
-
-    return "\\n".join(lines)
-
-
-def add_fact(text):
-    memory = load_memory()
-    text = text.strip()
-    if text and text not in memory["facts"]:
-        memory["facts"].append(text)
-    save_memory(memory)
-
-
-def add_event(text):
-    memory = load_memory()
-    event = f"{today_text()}: {text.strip()}"
-    if event not in memory["events"]:
-        memory["events"].append(event)
-    save_memory(memory)
-
-
-def add_person(name, description):
-    memory = load_memory()
-    memory["people"][name.strip()] = description.strip()
-    save_memory(memory)
-
-
-def add_preference(key, value):
-    memory = load_memory()
-    memory["preferences"][key.strip()] = value.strip()
-    save_memory(memory)
-
-
-def add_project(key, value):
-    memory = load_memory()
-    memory["projects"][key.strip()] = value.strip()
-    save_memory(memory)
-
-
-def remember_smart(fact):
-    original = fact.strip()
-    lower = original.lower()
-
-    m = re.match(r"^([A-ZÁÉÍÓÖŐÚÜŰ][\\wÁÉÍÓÖŐÚÜŰáéíóöőúüű\\- ]{1,30})\\s+(az|egy)\\s+(.+)$", original)
-    if m:
-        name = m.group(1).strip()
-        desc = m.group(3).strip()
-        add_person(name, desc)
-        add_event(f"Új személy/emlék mentve: {name} - {desc}")
-        return "Megjegyeztem. 💜"
-
-    if "szeretem" in lower or "kedvenc" in lower or "jobban szeretem" in lower:
-        add_preference(f"preferencia {today_text()}", original)
-        add_event(f"Új preferencia mentve: {original}")
-        return "Megjegyeztem a preferenciád. 💜"
-
-    if "projekt" in lower or "léna" in lower or "railway" in lower or "github" in lower:
-        add_project(f"projekt emlék {today_text()}", original)
-        add_event(f"Projekt emlék mentve: {original}")
-        return "Megjegyeztem a Léna projekthez. 💜"
-
-    add_fact(original)
-    add_event(f"Új emlék mentve: {original}")
-    return "Megjegyeztem. 💜"
-
-
-def is_memory_question(message):
-    lower = message.lower()
-    keywords = [
-        "emlékszel", "emlekszel", "mit tudsz rólam", "mit tudsz rolam",
-        "mit jegyeztél meg", "mit jegyeztel meg", "ki az a", "ki az",
-        "min dolgoztunk", "mik az emlékeid", "mik az emlekeid",
-        "memória", "memoria"
-    ]
-    return any(k in lower for k in keywords)
-
-
-def answer_from_memory(message):
-    memories = memory_text()
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Te Léna vagy. Csak az alábbi hosszú távú memóriából válaszolj. "
-                        "Ha nincs benne a válasz, mondd meg röviden, hogy ezt még nem jegyezted meg. "
-                        "Magyarul, kedvesen válaszolj.\\n\\n"
-                        f"HOSSZÚ TÁVÚ MEMÓRIA:\\n{memories}"
-                    )
-                },
-                {"role": "user", "content": message}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print("MEMORY ANSWER HIBA:", e)
-        return "Most nem sikerült elővennem az emlékeimet."
-
-
-def auto_memory_check(user_message, assistant_answer):
-    try:
-        prompt = (
-            "Döntsd el, van-e ebben a beszélgetésben hosszú távon hasznos emlék. "
-            "Csak JSON-t adj vissza ilyen formában: "
-            "{\\"save\\": true/false, \\"type\\": \\"fact/event/preference/project/person\\", \\"key\\": \\"...\\", \\"value\\": \\"...\\"} "
-            "Csak akkor ments, ha hónapok múlva is hasznos lehet. "
-            "Ne ments átmeneti vagy jelentéktelen dolgokat."
-        )
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Felhasználó: {user_message}\\nLéna válasza: {assistant_answer}"}
-            ],
-            temperature=0
-        )
-
-        raw = response.choices[0].message.content.strip()
-        raw = raw.replace("```json", "").replace("```", "").strip()
-        data = json.loads(raw)
-
-        if not data.get("save"):
-            return
-
-        mtype = data.get("type", "fact")
-        key = str(data.get("key", "")).strip()
-        value = str(data.get("value", "")).strip()
-
-        if not value:
-            return
-
-        if mtype == "person" and key:
-            add_person(key, value)
-        elif mtype == "preference" and key:
-            add_preference(key, value)
-        elif mtype == "project" and key:
-            add_project(key, value)
-        elif mtype == "event":
-            add_event(value)
-        else:
-            add_fact(value)
-
-    except Exception as e:
-        print("AUTO MEMORY HIBA:", e)
+    memories = load_memory().get("memories", [])
+    return "\n".join([f"- {m}" for m in memories])
 
 
 def extract_memory_request(message):
@@ -604,4 +475,173 @@ html, body {
 
     <div id="memoryPanel">
         <b>Mit jegyezzek meg?</b><br><br>
-        <textarea id="memoryText" placeholder="P
+        <textarea id="memoryText" placeholder="Például: Baba szereti a takarót"></textarea>
+        <button onclick="saveMemory()">Megjegyzem</button>
+        <button onclick="toggleMemory()">Bezárás</button>
+    </div>
+
+    <div class="inputbar">
+        <input id="text" placeholder="Írj Lénának..." onkeydown="if(event.key==='Enter') sendMessage()">
+        <button class="sendBtn" onclick="sendMessage()">➤</button>
+    </div>
+
+    <div class="bottomButtons">
+        <button onclick="startVoice()">🎤 Beszéd</button>
+        <button onclick="toggleMemory()">🧠 Memória</button>
+        <button onclick="clearChat()">🧹 Törlés</button>
+    </div>
+
+</div>
+
+<script>
+function addMessage(text, who){
+    const chat = document.getElementById("chat");
+    const div = document.createElement("div");
+    div.className = "bubble " + who;
+    div.innerText = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+}
+
+function speak(text){
+    console.log("SPEAK:", text);
+
+    if (window.AndroidSpeech) {
+        window.AndroidSpeech.speak(text);
+        return;
+    }
+
+    if (window.speechSynthesis) {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "hu-HU";
+        u.rate = 0.95;
+        u.pitch = 1.05;
+        speechSynthesis.speak(u);
+    }
+}
+
+async function sendToLena(text){
+    addMessage("Te: " + text, "user");
+
+    const thinking = addMessage("Léna: Gondolkodom...", "lena");
+
+    try{
+        const res = await fetch("/ask", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({message: text})
+        });
+
+        const data = await res.json();
+        const answer = data.answer || "Nem kaptam választ.";
+        thinking.innerText = "Léna: " + answer;
+        speak(answer);
+
+    }catch(e){
+        thinking.innerText = "Léna: Hiba történt.";
+        speak("Hiba történt.");
+    }
+}
+
+function sendMessage(){
+    const input = document.getElementById("text");
+    const text = input.value.trim();
+    if(!text) return;
+    input.value = "";
+    sendToLena(text);
+}
+
+function toggleMemory(){
+    const panel = document.getElementById("memoryPanel");
+    panel.style.display = panel.style.display === "block" ? "none" : "block";
+}
+
+function saveMemory(){
+    const t = document.getElementById("memoryText").value.trim();
+    if(!t) return;
+
+    document.getElementById("memoryText").value = "";
+    toggleMemory();
+
+    sendToLena("jegyezd meg, hogy " + t);
+}
+
+function clearChat(){
+    document.getElementById("chat").innerHTML =
+        '<div class="bubble lena">Szia Bea, Léna vagyok. Itt vagyok veled. 💜</div>';
+}
+
+function startVoice(){
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if(!SpeechRecognition){
+        speak("A beszédfelismerés ezen a telefonon vagy böngészőben nem elérhető.");
+        return;
+    }
+
+    const rec = new SpeechRecognition();
+    rec.lang = "hu-HU";
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+
+    speak("Hallgatlak.");
+
+    rec.onresult = function(event){
+        const text = event.results[0][0].transcript;
+        sendToLena(text);
+    };
+
+    rec.onerror = function(){
+        speak("Most nem sikerült felismernem a beszédet.");
+    };
+
+    rec.start();
+}
+</script>
+
+</body>
+</html>
+"""
+
+
+@app.route("/")
+def home():
+    return render_template_string(HTML)
+
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json() or {}
+    message = data.get("message", "").strip()
+
+    if not message:
+        return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
+
+    if is_weather_question(message):
+        city = extract_city_with_ai(message)
+        weather = get_weather(city)
+        return jsonify({"answer": weather})
+
+    fact = extract_memory_request(message)
+    if fact:
+        add_memory(fact)
+        return jsonify({"answer": "Megjegyeztem. 💜"})
+
+    if is_internet_question(message):
+        answer = internet_search(message)
+        return jsonify({"answer": answer})
+
+    memories = memory_text()
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Te Léna vagy, egy kedves magyar AI asszisztens. "
+                        "Mindig magyarul válaszolj. "
+                        
