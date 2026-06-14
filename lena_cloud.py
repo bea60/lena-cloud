@@ -480,6 +480,14 @@ function addMessage(text, who){
 }
 
 function speak(text){
+
+    text = text
+        .replace(/https?:\/\/\S+/gi, "")
+        .replace(/www\.\S+/gi, "")
+        .replace(/[•*_#>\[\]()`]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
     console.log("SPEAK:", text);
 
     if (window.AndroidSpeech) {
