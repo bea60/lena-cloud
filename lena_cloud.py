@@ -22,6 +22,46 @@ DEFAULT_MEMORIES = [
 ]
 
 
+def clean_news_answer(text):
+    if not text:
+        return ""
+
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', '', text)
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'www\.\S+', '', text)
+
+    text = re.sub(
+        r'\([^)]*\.(?:hu|com|net|org|info|eu|io|co|gov|edu|app|dev)[^)]*\)',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r'\[[^\]]*\.(?:hu|com|net|org|info|eu|io|co|gov|edu|app|dev)[^\]]*\]',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r'\b(?:www\.)?[a-zA-Z0-9-]+\.(?:hu|com|net|org|info|eu|io|co|gov|edu|app|dev)\S*',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(r'\bforrás\s*:?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\blink\s*:?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\burl\s*:?\s*', '', text, flags=re.IGNORECASE)
+
+    text = re.sub(r'[•*_#>\[\]()`]', '', text)
+    text = re.sub(r'[-–—]{2,}', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
+
+
 def get_weather(city="Petah Tikva"):
     try:
         if not WEATHER_API_KEY:
@@ -54,7 +94,6 @@ def extract_city_simple(message):
     text = message.strip()
     lower = text.lower()
 
-    # Magyar ragok levágása egyszerűen: Tel Avivban -> Tel Aviv, Budapesten -> Budapest
     patterns = [
         r"(?:idő|ido|időjárás|idojaras).*?(?:van|lesz)?\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
         r"(?:milyen|mennyi).*?\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
@@ -65,13 +104,17 @@ def extract_city_simple(message):
         m = re.search(p, lower, re.IGNORECASE)
         if m:
             city = m.group(1).strip()
-            city = re.sub(r"\b(milyen|mennyi|az|a|idő|ido|időjárás|idojaras|most|van|lesz|ott)\b", "", city, flags=re.IGNORECASE).strip()
+            city = re.sub(
+                r"\b(milyen|mennyi|az|a|idő|ido|időjárás|idojaras|most|van|lesz|ott)\b",
+                "",
+                city,
+                flags=re.IGNORECASE
+            ).strip()
             city = city.strip(" ?.!,:;")
             city = re.sub(r"(ban|ben|on|en|ön|n)$", "", city, flags=re.IGNORECASE).strip()
             if city and len(city) >= 2:
                 return city.title()
 
-    # Ha nem talál várost, marad Bea alapvárosa
     return "Petah Tikva"
 
 
@@ -109,7 +152,6 @@ def is_weather_question(message):
     lower = message.lower()
     words = ["idő", "ido", "időjárás", "idojaras", "hány fok", "hany fok", "meleg", "hideg", "esik", "eső", "eso"]
     return any(w in lower for w in words)
-
 
 
 def is_internet_question(message):
@@ -163,8 +205,13 @@ def internet_search(message):
                     "content": (
                         "Te Léna vagy, Bea kedves magyar AI asszisztense. "
                         "Használj internetes keresést, ha friss vagy aktuális adat kell. "
-                        "Magyarul válaszolj, röviden és érthetően. "
-                        "Ha az adat bizonytalan, mondd meg."
+                        "Magyarul válaszolj röviden és érthetően. "
+                        "SOHA ne írj forrásokat. "
+                        "SOHA ne írj URL-eket. "
+                        "SOHA ne írj weboldal neveket. "
+                        "SOHA ne írj zárójelben hivatkozást. "
+                        "Csak a hírt vagy információt mondd el. "
+                        "Ha az adat bizonytalan, mondd meg röviden."
                     )
                 },
                 {
@@ -175,7 +222,7 @@ def internet_search(message):
         )
 
         if hasattr(response, "output_text") and response.output_text:
-            return response.output_text
+            return clean_news_answer(response.output_text)
 
         return "Találtam találatokat, de most nem sikerült szépen összefoglalnom."
 
@@ -197,7 +244,10 @@ def internet_search(message):
                     {"role": "user", "content": message}
                 ]
             )
-            return "Most nem sikerült élő internetes keresést használnom, de ezt tudom: " + fallback.choices[0].message.content
+            return clean_news_answer(
+                "Most nem sikerült élő internetes keresést használnom, de ezt tudom: "
+                + fallback.choices[0].message.content
+            )
 
         except Exception as e2:
             print("WEB FALLBACK HIBA:", e2)
@@ -481,28 +531,18 @@ function addMessage(text, who){
 
 function cleanForSpeech(text){
     return text
-        // teljes linkek törlése
-        .replace(/https?:\/\/\S+/gi, "")
-        .replace(/www\.\S+/gi, "")
-
-        // domain nevek törlése: bank.hu, szeged365.hu, portfolio.hu stb.
-        .replace(/\b[a-z0-9-]+\.(hu|com|org|net|io|co|gov|edu|info|eu|app|dev)\b/gi, "")
-
-        // zárójeles forrásrészek törlése
-        .replace(/\([^)]*\.(hu|com|org|net|io|co|eu)[^)]*\)/gi, "")
-        .replace(/\[[^\]]*\.(hu|com|org|net|io|co|eu)[^\]]*\]/gi, "")
-
-        // gyakori felolvasott linkmaradékok törlése
-        .replace(/\bforrás\s*:?\s*/gi, "")
-        .replace(/\blink\s*:?\s*/gi, "")
-        .replace(/\burl\s*:?\s*/gi, "")
-
-        // markdown és felesleges jelek törlése
-        .replace(/[•*_#>\[\]()`]/g, "")
+        .replace(/\\[[^\\]]*\\]\\([^)]*\\)/gi, "")
+        .replace(/https?:\\/\\/\\S+/gi, "")
+        .replace(/www\\.\\S+/gi, "")
+        .replace(/\\([^)]*\\.(hu|com|org|net|io|co|gov|edu|info|eu|app|dev)[^)]*\\)/gi, "")
+        .replace(/\\[[^\\]]*\\.(hu|com|org|net|io|co|gov|edu|info|eu|app|dev)[^\\]]*\\]/gi, "")
+        .replace(/\\b[a-z0-9-]+\\.(hu|com|org|net|io|co|gov|edu|info|eu|app|dev)\\S*/gi, "")
+        .replace(/\\bforrás\\s*:?\\s*/gi, "")
+        .replace(/\\blink\\s*:?\\s*/gi, "")
+        .replace(/\\burl\\s*:?\\s*/gi, "")
+        .replace(/[•*_#>\\[\\]()`]/g, "")
         .replace(/[-–—]{2,}/g, " ")
-
-        // szóközök rendezése
-        .replace(/\s+/g, " ")
+        .replace(/\\s+/g, " ")
         .trim();
 }
 
@@ -638,6 +678,7 @@ def ask():
 
     if is_internet_question(message):
         answer = internet_search(message)
+        answer = clean_news_answer(answer)
         return jsonify({"answer": answer})
 
     memories = memory_text()
@@ -652,7 +693,7 @@ def ask():
                         "Te Léna vagy, egy kedves magyar AI asszisztens. "
                         "Mindig magyarul válaszolj. "
                         "Röviden, természetesen, melegen válaszolj. "
-                        "Ezek az emlékeid:\n"
+                        "Ezek az emlékeid:\\n"
                         + memories
                     )
                 },
@@ -660,7 +701,8 @@ def ask():
             ]
         )
 
-        return jsonify({"answer": response.choices[0].message.content})
+        answer = response.choices[0].message.content
+        return jsonify({"answer": answer})
 
     except Exception as e:
         print("HIBA:", e)
