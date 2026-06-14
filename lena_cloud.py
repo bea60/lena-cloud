@@ -111,7 +111,6 @@ def is_weather_question(message):
     return any(w in lower for w in words)
 
 
-
 def is_internet_question(message):
     lower = message.lower()
 
@@ -125,12 +124,31 @@ def is_internet_question(message):
         "friss",
         "aktuális",
         "aktualis",
-        "mai hír",
-        "mai hir",
+
+        "hír",
+        "hir",
         "hírek",
         "hirek",
+        "mai hír",
+        "mai hir",
+        "mai hírek",
+        "mai hirek",
+        "fő hír",
+        "fo hir",
+        "főhir",
+        "fohir",
+        "mi a mai fő hír",
+        "mi a mai fo hir",
         "mi történt",
         "mi tortent",
+        "történt ma",
+        "tortent ma",
+        "izraelben",
+        "magyarországon",
+        "magyarorszagon",
+        "világban",
+        "vilagban",
+
         "most mennyi",
         "árfolyam",
         "arfolyam",
@@ -138,9 +156,15 @@ def is_internet_question(message):
         "ethereum",
         "tőzsde",
         "tozsde",
+        "részvény",
+        "reszveny",
+
         "sport",
         "meccs",
         "ki nyerte",
+        "eredmény",
+        "eredmeny",
+
         "választás",
         "valasztas",
         "menetrend",
@@ -162,9 +186,10 @@ def internet_search(message):
                     "role": "system",
                     "content": (
                         "Te Léna vagy, Bea kedves magyar AI asszisztense. "
-                        "Használj internetes keresést, ha friss vagy aktuális adat kell. "
+                        "Használj élő internetes keresést friss hírekhez, árfolyamhoz, sporthoz és aktuális adatokhoz. "
                         "Magyarul válaszolj, röviden és érthetően. "
-                        "Ha az adat bizonytalan, mondd meg."
+                        "Híreknél 2-4 mondatban foglald össze a legfontosabbat. "
+                        "Ha nem találsz biztos adatot, mondd meg őszintén."
                     )
                 },
                 {
