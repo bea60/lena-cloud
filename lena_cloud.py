@@ -479,16 +479,40 @@ function addMessage(text, who){
     return div;
 }
 
-function speak(text){
-
-    text = text
+function cleanForSpeech(text){
+    return text
+        // teljes linkek törlése
         .replace(/https?:\/\/\S+/gi, "")
         .replace(/www\.\S+/gi, "")
+
+        // domain nevek törlése: bank.hu, szeged365.hu, portfolio.hu stb.
+        .replace(/\b[a-z0-9-]+\.(hu|com|org|net|io|co|gov|edu|info|eu|app|dev)\b/gi, "")
+
+        // zárójeles forrásrészek törlése
+        .replace(/\([^)]*\.(hu|com|org|net|io|co|eu)[^)]*\)/gi, "")
+        .replace(/\[[^\]]*\.(hu|com|org|net|io|co|eu)[^\]]*\]/gi, "")
+
+        // gyakori felolvasott linkmaradékok törlése
+        .replace(/\bforrás\s*:?\s*/gi, "")
+        .replace(/\blink\s*:?\s*/gi, "")
+        .replace(/\burl\s*:?\s*/gi, "")
+
+        // markdown és felesleges jelek törlése
         .replace(/[•*_#>\[\]()`]/g, "")
+        .replace(/[-–—]{2,}/g, " ")
+
+        // szóközök rendezése
         .replace(/\s+/g, " ")
         .trim();
+}
+
+function speak(text){
+
+    text = cleanForSpeech(text);
 
     console.log("SPEAK:", text);
+
+    if (!text) return;
 
     if (window.AndroidSpeech) {
         window.AndroidSpeech.speak(text);
