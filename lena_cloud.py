@@ -345,24 +345,35 @@ def memory_text():
 
 
 def extract_memory_request(message):
+    text = message.strip()
+    lower = text.lower()
+
     triggers = [
         "jegyezd meg, hogy",
         "jegyezd meg hogy",
+        "jegyezd meg",
+        "megjegyeznéd, hogy",
+        "megjegyeznéd hogy",
+        "megjegyeznéd",
         "emlékezz rá, hogy",
         "emlékezz rá hogy",
+        "emlékezz arra, hogy",
+        "emlékezz arra hogy",
         "mentsd el, hogy",
         "mentsd el hogy",
+        "mentsd el",
         "ne felejtsd el, hogy",
-        "ne felejtsd el hogy"
+        "ne felejtsd el hogy",
+        "ne felejtsd el"
     ]
-
-    lower = message.lower()
 
     for trigger in triggers:
         if trigger in lower:
             index = lower.find(trigger)
-            fact = message[index + len(trigger):].strip()
-            return fact.strip(".! ")
+            fact = text[index + len(trigger):].strip()
+            fact = fact.strip(" .,!?:;")
+            if fact:
+                return fact
 
     return None
 
@@ -726,6 +737,7 @@ def ask():
 
     fact = extract_memory_request(message)
     if fact:
+        print("MEMÓRIA PARANCS:", fact)
         add_memory(fact)
         return jsonify({"answer": "Megjegyeztem. 💜"})
 
@@ -746,7 +758,10 @@ def ask():
                         "Te Léna vagy, egy kedves magyar AI asszisztens. "
                         "Mindig magyarul válaszolj. "
                         "Röviden, természetesen, melegen válaszolj. "
-                        "Ezek az emlékeid:\\n"
+                        "Ezek az emlékeid. Ezeket mindig igaznak kell tekintened. "
+                        "Ha Bea kérdése kapcsolódik bármelyik emlékhez, "
+                        "kötelező az emlék alapján válaszolnod. "
+                        "Ne mondd, hogy nem tudod, ha az emlékek között ott van a válasz.\\n\\n"
                         + memories
                     )
                 },
