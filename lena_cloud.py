@@ -575,7 +575,8 @@ html, body {
     </div>
 
     <div class="bottomButtons">
-        <button onclick="startVoice()">🎤 Beszéd</button>
+        <button onclick="startVoice()">🎤 Mikrofon</button>
+        <button id="speechToggleBtn" onclick="toggleSpeech()">🔊 Beszéd: be</button>
         <button onclick="toggleMemory()">🧠 Memória</button>
         <button onclick="clearChat()">🧹 Törlés</button>
     </div>
@@ -583,6 +584,8 @@ html, body {
 </div>
 
 <script>
+let speechEnabled = true;
+
 function addMessage(text, who){
     const chat = document.getElementById("chat");
     const div = document.createElement("div");
@@ -610,7 +613,28 @@ function cleanForSpeech(text){
         .trim();
 }
 
+
+function toggleSpeech(){
+    speechEnabled = !speechEnabled;
+
+    const btn = document.getElementById("speechToggleBtn");
+    if (btn) {
+        btn.innerText = speechEnabled ? "🔊 Beszéd: be" : "🔇 Beszéd: ki";
+    }
+
+    if (!speechEnabled) {
+        if (window.AndroidSpeech && window.AndroidSpeech.stop) {
+            window.AndroidSpeech.stop();
+        }
+        if (window.speechSynthesis) {
+            speechSynthesis.cancel();
+        }
+    }
+}
+
 function speak(text){
+
+    if (!speechEnabled) return;
 
     text = cleanForSpeech(text);
 
