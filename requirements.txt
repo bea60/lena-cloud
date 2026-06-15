@@ -2,3 +2,4 @@ flask
 gunicorn
 openai
 requests
+psycopg2-binary
