@@ -4,12 +4,13 @@ import re
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 import requests
+import psycopg2
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
 
-MEMORY_FILE = "memory.json"
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 DEFAULT_MEMORIES = [
     "A felhasználó Bea.",
@@ -254,36 +255,88 @@ def internet_search(message):
             return "Most nem sikerült interneten keresnem."
 
 
+def get_db_connection():
+    if not DATABASE_URL:
+        raise Exception("Hiányzik a DATABASE_URL Railway változó.")
+    return psycopg2.connect(DATABASE_URL)
+
+
+def init_memory_db():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS memories (
+                id SERIAL PRIMARY KEY,
+                text TEXT UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        for item in DEFAULT_MEMORIES:
+            cur.execute(
+                "INSERT INTO memories (text) VALUES (%s) ON CONFLICT (text) DO NOTHING",
+                (item,)
+            )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print("MEMÓRIA DB INIT HIBA:", e)
+
+
 def load_memory():
-    memory = {"memories": DEFAULT_MEMORIES.copy()}
+    memories = DEFAULT_MEMORIES.copy()
 
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-                for item in saved.get("memories", []):
-                    if item not in memory["memories"]:
-                        memory["memories"].append(item)
-        except Exception:
-            pass
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-    return memory
+        cur.execute("SELECT text FROM memories ORDER BY id DESC LIMIT 80")
+        rows = cur.fetchall()
+
+        db_memories = [row[0] for row in rows]
+
+        for item in reversed(db_memories):
+            if item not in memories:
+                memories.append(item)
+
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print("MEMÓRIA OLVASÁS HIBA:", e)
+
+    return {"memories": memories}
 
 
 def save_memory(memory):
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(memory, f, ensure_ascii=False, indent=2)
+    for item in memory.get("memories", []):
+        add_memory(item)
 
 
 def add_memory(text):
-    memory = load_memory()
-    memories = memory.get("memories", [])
+    if not text:
+        return
 
-    if text and text not in memories:
-        memories.append(text)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-    memory["memories"] = memories[-80:]
-    save_memory(memory)
+        cur.execute(
+            "INSERT INTO memories (text) VALUES (%s) ON CONFLICT (text) DO NOTHING",
+            (text,)
+        )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print("MEMÓRIA MENTÉS HIBA:", e)
 
 
 def memory_text():
@@ -708,6 +761,8 @@ def ask():
         print("HIBA:", e)
         return jsonify({"answer": "Most nem sikerült válaszolnom. Nézd meg a Railway logot."})
 
+
+init_memory_db()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
