@@ -2,6 +2,7 @@ import os
 import json
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, request, jsonify, render_template_string
@@ -102,7 +103,7 @@ def load_memory():
 
 def save_memory(memory):
     memory["memories"] = memory.get("memories", [])[-100:]
-    memory["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    memory["updated_at"] = get_local_datetime().isoformat(timespec="seconds")
 
     save_json_file(MEMORY_FILE, memory)
 
@@ -246,7 +247,7 @@ def add_history(role, content):
     history["messages"].append({
         "role": role,
         "content": content,
-        "time": datetime.now().isoformat(timespec="seconds")
+        "time": get_local_datetime().isoformat(timespec="seconds")
     })
 
     save_history(history)
@@ -278,6 +279,98 @@ def save_moods(data):
         MOOD_FILE,
         data
     )
+
+
+# ============================================================
+# HELYI IDŐ ÉS DÁTUM – IZRAEL
+# ============================================================
+
+ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
+
+
+def get_local_datetime():
+    return datetime.now(ISRAEL_TZ)
+
+
+def get_local_time_text():
+    now = get_local_datetime()
+    return f"Most {now.strftime('%H:%M')} van. 💜"
+
+
+def get_local_date_text():
+    now = get_local_datetime()
+
+    weekdays = [
+        "hétfő",
+        "kedd",
+        "szerda",
+        "csütörtök",
+        "péntek",
+        "szombat",
+        "vasárnap"
+    ]
+
+    months = [
+        "",
+        "január",
+        "február",
+        "március",
+        "április",
+        "május",
+        "június",
+        "július",
+        "augusztus",
+        "szeptember",
+        "október",
+        "november",
+        "december"
+    ]
+
+    weekday = weekdays[now.weekday()]
+    month = months[now.month]
+
+    return (
+        f"Ma {now.year}. {month} {now.day}., "
+        f"{weekday} van. 💜"
+    )
+
+
+def is_time_question(message):
+    lower = (message or "").lower().strip()
+
+    phrases = [
+        "hány óra",
+        "hany ora",
+        "mennyi az idő",
+        "mennyi az ido",
+        "pontos idő",
+        "pontos ido",
+        "hány óra van",
+        "hany ora van",
+        "mit mutat az óra",
+        "mit mutat az ora"
+    ]
+
+    return any(phrase in lower for phrase in phrases)
+
+
+def is_date_question(message):
+    lower = (message or "").lower().strip()
+
+    phrases = [
+        "mi a mai dátum",
+        "mi a mai datum",
+        "mai dátum",
+        "mai datum",
+        "milyen nap van",
+        "hányadika van",
+        "hanyadika van",
+        "milyen dátum van",
+        "milyen datum van",
+        "mi van ma"
+    ]
+
+    return any(phrase in lower for phrase in phrases)
 
 
 # ============================================================
@@ -483,7 +576,7 @@ def health():
         "ok": True,
         "status": "online",
         "service": "Lena 3.2",
-        "time": datetime.now().isoformat(timespec="seconds")
+        "time": get_local_datetime().isoformat(timespec="seconds")
     })
 
 
@@ -605,7 +698,7 @@ def mood_add_api():
     moods = load_moods()
 
     moods["moods"].append({
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "date": get_local_datetime().strftime("%Y-%m-%d %H:%M"),
         "mood": mood,
         "emoji": emoji
     })
@@ -660,6 +753,26 @@ def process_question(message):
             if added
             else "Ezt már tudtam. 💜"
         )
+
+        add_history(
+            "assistant",
+            answer
+        )
+
+        return answer
+
+    if is_time_question(message):
+        answer = get_local_time_text()
+
+        add_history(
+            "assistant",
+            answer
+        )
+
+        return answer
+
+    if is_date_question(message):
+        answer = get_local_date_text()
 
         add_history(
             "assistant",
