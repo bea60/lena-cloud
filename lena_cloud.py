@@ -1,10 +1,7 @@
-
-
-
 import os
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 import requests
@@ -12,194 +9,179 @@ import requests
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
-
-MEMORY_FILE = "memory.json"
+MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+MEMORY_FILE = os.environ.get("LENA_MEMORY_FILE", "memory.json")
 
 DEFAULT_MEMORIES = [
     "A felhasználó Bea.",
-    "Ági Bea párja.",
-    "Bea építi a telefonos Léna projektet.",
-    "Léna telefonon fut Android appban.",
-    "Baba, másik nevén Yoda, egy sphynx cica.",
-    "Bea azt szereti, ha teljes, egyben cserélhető kódot kap.",
-    "Léna magyarul, kedvesen, röviden válaszol."
+    "Léna telefonon fut Android alkalmazásban.",
+    "Léna magyarul, kedvesen és röviden válaszol."
 ]
 
-def get_weather(city="Petah Tikva"):
-    try:
-        if not WEATHER_API_KEY:
-            return "Hiányzik az OPENWEATHER_API_KEY a Railway változók közül."
-
-        url = (
-            "https://api.openweathermap.org/data/2.5/weather"
-            f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=hu"
-        )
-        r = requests.get(url, timeout=10)
-        data = r.json()
-
-        if r.status_code != 200:
-            return f"Nem találtam időjárást erre a városra: {city}."
-
-        temp = round(data["main"]["temp"])
-        feels = round(data["main"].get("feels_like", data["main"]["temp"]))
-        desc = data["weather"][0]["description"]
-        name = data.get("name", city)
-        return f"{name} városában most {temp} fok van, {desc}. Hőérzet: {feels} fok."
-
-    except Exception as e:
-        print("WEATHER HIBA:", e)
-        return "Most nem sikerült lekérnem az időjárást."
-
-def extract_city_simple(message):
-    text = message.strip()
-    lower = text.lower()
-    patterns = [
-        r"(?:idő|ido|időjárás|idojaras).*?(?:van|lesz)?\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
-        r"(?:milyen|mennyi).*?\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
-        r"(?:és|es)\s+(.+?)(?:ban|ben|on|en|ön|n)?\??$",
-    ]
-    for p in patterns:
-        m = re.search(p, lower, re.IGNORECASE)
-        if m:
-            city = m.group(1).strip()
-            city = re.sub(r"\b(milyen|mennyi|az|a|idő|ido|időjárás|idojaras|most|van|lesz|ott)\b", "", city, flags=re.IGNORECASE).strip()
-            city = city.strip(" ?.!,:;")
-            city = re.sub(r"(ban|ben|on|en|ön|n)$", "", city, flags=re.IGNORECASE).strip()
-            if city and len(city) >= 2:
-                return city.title()
-    return "Petah Tikva"
-
-def extract_city_with_ai(message):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "A felhasználó magyar mondatából csak a város nevét add vissza. "
-                        "Ha nincs benne város, válaszolj pontosan ezzel: Petah Tikva."
-                    )
-                },
-                {"role": "user", "content": message}
-            ],
-            temperature=0
-        )
-        city = response.choices[0].message.content.strip().replace(".", "")
-        if city:
-            return city
-    except Exception as e:
-        print("CITY AI HIBA:", e)
-    return extract_city_simple(message)
-
-def is_weather_question(message):
-    lower = message.lower()
-    words = ["idő", "ido", "időjárás", "idojaras", "hány fok", "hany fok", "meleg", "hideg", "esik", "eső", "eso"]
-    return any(w in lower for w in words)
-
 def normalize_memory_item(text):
-    text = re.sub(r"\s+", " ", (text or "")).strip(" .!;")
-    return text[:500]
+    return re.sub(r"\s+", " ", (text or "")).strip(" .!;\n\t")[:500]
+
+def _empty_store():
+    return {"memories": DEFAULT_MEMORIES.copy(), "moods": [], "updated_at": None}
 
 def load_memory():
-    memory = {"memories": DEFAULT_MEMORIES.copy(), "updated_at": None}
+    data = _empty_store()
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-            items = saved.get("memories", [])
-            for item in items:
-                item = normalize_memory_item(item)
-                if item and item.casefold() not in {x.casefold() for x in memory["memories"]}:
-                    memory["memories"].append(item)
-            memory["updated_at"] = saved.get("updated_at")
+            if isinstance(saved, dict):
+                saved_memories = saved.get("memories", [])
+                if isinstance(saved_memories, list):
+                    existing = {x.casefold() for x in data["memories"]}
+                    for item in saved_memories:
+                        item = normalize_memory_item(item)
+                        if item and item.casefold() not in existing:
+                            data["memories"].append(item)
+                            existing.add(item.casefold())
+                moods = saved.get("moods", [])
+                if isinstance(moods, list):
+                    data["moods"] = moods[-365:]
+                data["updated_at"] = saved.get("updated_at")
         except Exception as e:
             print("MEMÓRIA OLVASÁSI HIBA:", e)
-    return memory
+    return data
 
-def save_memory(memory):
-    memory["memories"] = memory.get("memories", [])[-100:]
-    memory["updated_at"] = datetime.now().isoformat(timespec="seconds")
+def save_memory(data):
+    data["memories"] = data.get("memories", [])[-200:]
+    data["moods"] = data.get("moods", [])[-365:]
+    data["updated_at"] = datetime.now().isoformat(timespec="seconds")
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(memory, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def add_memory(text):
     text = normalize_memory_item(text)
     if not text:
         return False
-    memory = load_memory()
-    items = memory.get("memories", [])
-    if text.casefold() in {x.casefold() for x in items}:
+    data = load_memory()
+    if text.casefold() in {x.casefold() for x in data["memories"]}:
         return False
-    items.append(text)
-    memory["memories"] = items[-100:]
-    save_memory(memory)
+    data["memories"].append(text)
+    save_memory(data)
     return True
 
 def forget_memory(text):
     needle = normalize_memory_item(text).casefold()
     if not needle:
         return 0
-    memory = load_memory()
-    old = memory.get("memories", [])
+    data = load_memory()
+    old = data["memories"]
     kept = [x for x in old if needle not in x.casefold()]
     removed = len(old) - len(kept)
-    memory["memories"] = kept
+    data["memories"] = kept
     if removed:
-        save_memory(memory)
+        save_memory(data)
     return removed
 
 def memory_text():
-    return "\n".join(f"- {m}" for m in load_memory().get("memories", []))
+    return "\n".join(f"- {m}" for m in load_memory()["memories"])
+
+def add_mood(mood, emoji="💜", note=""):
+    mood = normalize_memory_item(mood)
+    note = normalize_memory_item(note)
+    if not mood:
+        return None
+    data = load_memory()
+    entry = {
+        "date": datetime.now().date().isoformat(),
+        "time": datetime.now().strftime("%H:%M"),
+        "mood": mood,
+        "emoji": emoji or "💜",
+        "note": note
+    }
+    data["moods"].append(entry)
+    save_memory(data)
+    return entry
+
+def mood_for_date(target_date):
+    moods = [m for m in load_memory().get("moods", []) if m.get("date") == target_date.isoformat()]
+    return moods[-1] if moods else None
+
+def detect_mood(message):
+    lower = message.lower().strip()
+    rules = [
+        (r"\b(ma\s+)?nem\s+vagyok\s+jól\b", "nem jól", "😔"),
+        (r"\b(ma\s+)?rosszul\s+vagyok\b", "rosszul", "😔"),
+        (r"\b(ma\s+)?szomorú\s+vagyok\b", "szomorú", "😢"),
+        (r"\b(ma\s+)?fáradt\s+vagyok\b", "fáradt", "😴"),
+        (r"\b(ma\s+)?mérges\s+vagyok\b", "mérges", "😠"),
+        (r"\b(ma\s+)?boldog\s+vagyok\b", "boldog", "😊"),
+        (r"\b(ma\s+)?jól\s+vagyok\b", "jól", "😊"),
+    ]
+    for pattern, mood, emoji in rules:
+        if re.search(pattern, lower, re.IGNORECASE):
+            return mood, emoji
+    return None
 
 def extract_memory_request(message):
-    triggers = [
-        "jegyezd meg, hogy", "jegyezd meg hogy",
-        "emlékezz rá, hogy", "emlékezz rá hogy",
-        "mentsd el, hogy", "mentsd el hogy",
-        "ne felejtsd el, hogy", "ne felejtsd el hogy"
-    ]
+    triggers = ["jegyezd meg, hogy", "jegyezd meg hogy", "jegyezd meg", "emlékezz rá, hogy", "emlékezz rá hogy", "mentsd el, hogy", "mentsd el hogy", "ne felejtsd el, hogy", "ne felejtsd el hogy"]
     lower = message.lower()
     for trigger in triggers:
-        if trigger in lower:
-            index = lower.find(trigger)
-            return normalize_memory_item(message[index + len(trigger):])
+        pos = lower.find(trigger)
+        if pos >= 0:
+            return normalize_memory_item(message[pos + len(trigger):])
     return None
 
 def extract_forget_request(message):
-    triggers = [
-        "felejtsd el, hogy", "felejtsd el hogy",
-        "töröld a memóriából, hogy", "töröld a memóriából hogy",
-        "ne emlékezz arra, hogy", "ne emlékezz arra hogy"
-    ]
+    triggers = ["felejtsd el, hogy", "felejtsd el hogy", "töröld a memóriából, hogy", "töröld a memóriából hogy", "ne emlékezz arra, hogy", "ne emlékezz arra hogy"]
     lower = message.lower()
     for trigger in triggers:
-        if trigger in lower:
-            index = lower.find(trigger)
-            return normalize_memory_item(message[index + len(trigger):])
+        pos = lower.find(trigger)
+        if pos >= 0:
+            return normalize_memory_item(message[pos + len(trigger):])
     return None
 
-# A telefonos alkalmazás külön HTML fájlt használ az Android assets mappából.
-# Ez a minimális kezdőoldal csak böngészős teszthez van.
-HTML = """<!doctype html><html lang="hu"><head><meta charset="utf-8"><title>Léna</title></head>
-<body style="font-family:Arial;padding:30px"><h1>Léna 💜</h1><p>A szerver működik.</p></body></html>"""
+def is_weather_question(message):
+    lower = message.lower()
+    return any(w in lower for w in ["időjárás", "idojaras", "hány fok", "hany fok", "meleg van", "hideg van", "esik az eső", "esik az eso"])
+
+def extract_city_simple(message):
+    lower = message.lower()
+    for city in ["petah tikva", "tel aviv", "jerusalem", "jeruzsálem", "haifa", "eilat"]:
+        if city in lower:
+            return city.title()
+    return "Petah Tikva"
+
+def get_weather(city="Petah Tikva"):
+    try:
+        if not WEATHER_API_KEY:
+            return "Az időjárás-kulcs nincs beállítva a szerveren."
+        r = requests.get("https://api.openweathermap.org/data/2.5/weather", params={"q": city, "appid": WEATHER_API_KEY, "units": "metric", "lang": "hu"}, timeout=10)
+        data = r.json()
+        if r.status_code != 200:
+            return f"Nem találtam időjárást erre a városra: {city}."
+        temp = round(data["main"]["temp"])
+        feels = round(data["main"].get("feels_like", data["main"]["temp"]))
+        desc = data["weather"][0]["description"]
+        return f"{data.get('name', city)} városában most {temp} fok van, {desc}. Hőérzet: {feels} fok."
+    except Exception as e:
+        print("WEATHER HIBA:", e)
+        return "Most nem sikerült lekérnem az időjárást."
+
+HTML = """<!doctype html><html lang='hu'><head><meta charset='utf-8'><title>Léna</title></head><body style='font-family:Arial;padding:30px'><h1>Léna 💜</h1><p>A szerver működik.</p></body></html>"""
 
 @app.route("/")
 def home():
     return render_template_string(HTML)
 
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"ok": True, "service": "LENA", "version": "2.0", "time": datetime.now().isoformat(timespec="seconds")})
+
 @app.route("/memory", methods=["GET"])
 def memory_api():
-    memory = load_memory()
-    return jsonify({
-        "memories": memory.get("memories", []),
-        "updated_at": memory.get("updated_at")
-    })
+    data = load_memory()
+    return jsonify({"memories": data["memories"], "updated_at": data.get("updated_at")})
 
 @app.route("/memory", methods=["POST"])
 def memory_add_api():
-    data = request.get_json() or {}
-    text = normalize_memory_item(data.get("text", ""))
+    payload = request.get_json() or {}
+    text = normalize_memory_item(payload.get("text", ""))
     if not text:
         return jsonify({"ok": False, "message": "Nincs mit megjegyezni."}), 400
     added = add_memory(text)
@@ -207,20 +189,36 @@ def memory_add_api():
 
 @app.route("/memory/forget", methods=["POST"])
 def memory_forget_api():
-    data = request.get_json() or {}
-    text = normalize_memory_item(data.get("text", ""))
+    payload = request.get_json() or {}
+    text = normalize_memory_item(payload.get("text", ""))
     if not text:
         return jsonify({"ok": False, "message": "Nincs megadva, mit felejtsek el."}), 400
-    removed = forget_memory(text)
-    return jsonify({"ok": True, "removed": removed})
+    return jsonify({"ok": True, "removed": forget_memory(text)})
+
+@app.route("/mood", methods=["GET", "POST"])
+def mood_api():
+    if request.method == "GET":
+        return jsonify({"moods": load_memory().get("moods", [])})
+    payload = request.get_json() or {}
+    entry = add_mood(payload.get("mood", ""), payload.get("emoji", "💜"), payload.get("note", ""))
+    if not entry:
+        return jsonify({"ok": False, "message": "Nincs megadva hangulat."}), 400
+    return jsonify({"ok": True, "entry": entry})
 
 @app.route("/ask", methods=["POST"])
 def ask():
-    data = request.get_json() or {}
-    message = (data.get("message") or "").strip()
-
+    payload = request.get_json() or {}
+    message = (payload.get("message") or "").strip()
     if not message:
         return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
+
+    lower = message.lower()
+    if "hogy voltam tegnap" in lower or "hogy éreztem magam tegnap" in lower:
+        m = mood_for_date(datetime.now().date() - timedelta(days=1))
+        return jsonify({"answer": f"Tegnap azt jegyeztem fel, hogy {m['emoji']} {m['mood']} voltál. 💜" if m else "Tegnapról még nincs hangulatbejegyzésem."})
+    if "hogy vagyok ma" in lower or "hogy voltam ma" in lower:
+        m = mood_for_date(datetime.now().date())
+        return jsonify({"answer": f"Ma azt jegyeztem fel, hogy {m['emoji']} {m['mood']} vagy. 💜" if m else "Mára még nincs hangulatbejegyzésem."})
 
     forget = extract_forget_request(message)
     if forget:
@@ -229,39 +227,52 @@ def ask():
 
     fact = extract_memory_request(message)
     if fact:
+        mood = detect_mood(fact)
+        if mood:
+            add_mood(mood[0], mood[1], fact)
         added = add_memory(fact)
+        if mood:
+            if mood[0] == "jól":
+                return jsonify({"answer": "Örülök, hogy ma jól vagy. Megjegyeztem. 💜"})
+            return jsonify({"answer": "Megjegyeztem, hogyan érzed magad ma. 💜"})
         return jsonify({"answer": "Megjegyeztem. 💜" if added else "Ezt már tudtam. 💜"})
 
-    if is_weather_question(message):
-        city = extract_city_with_ai(message)
-        return jsonify({"answer": get_weather(city)})
+    mood = detect_mood(message)
+    if mood:
+        add_mood(mood[0], mood[1], message)
 
-    memories = memory_text()
+    if is_weather_question(message):
+        return jsonify({"answer": get_weather(extract_city_simple(message))})
 
     try:
+        memories = memory_text()
+        recent_moods = load_memory().get("moods", [])[-7:]
+        mood_context = "\n".join(f"- {m.get('date')}: {m.get('emoji','')} {m.get('mood','')}" for m in recent_moods)
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Te Léna vagy, egy kedves magyar AI asszisztens. "
-                        "Mindig magyarul válaszolj. Röviden, természetesen és melegen válaszolj. "
-                        "Ne állíts olyat biztos tényként, ami nincs benne az emlékeidben vagy a beszélgetésben. "
-                        "Ha egy új mondat ellentmond egy régi emléknek, kérdezz vissza, mielőtt tényként kezelnéd. "
-                        "Ezek az emlékeid:\n" + memories
-                    )
-                },
+                {"role": "system", "content": (
+                    "Te Léna vagy, egy kedves magyar AI asszisztens. Mindig magyarul válaszolj, hacsak a felhasználó más nyelvet nem kér. "
+                    "Válaszolj természetesen, röviden és melegen. Ne találj ki személyes tényeket. "
+                    "A tartós emlékek:\n" + memories + "\n\nAz utóbbi hangulatbejegyzések:\n" + mood_context
+                )},
                 {"role": "user", "content": message}
             ]
         )
-        return jsonify({"answer": response.choices[0].message.content})
-
+        answer = (response.choices[0].message.content or "").strip() or "Nem kaptam választ."
+        return jsonify({"answer": answer})
     except Exception as e:
-        print("HIBA:", e)
-        return jsonify({"answer": "Most nem sikerült válaszolnom. Nézd meg a Railway logot."})
+        print("HIBA:", repr(e))
+        return jsonify({"answer": "Most nem sikerült válaszolnom. A szerver naplójában látszik a pontos hiba."}), 200
+
+# Kompatibilitás régebbi HTML-verziókkal.
+@app.route("/chat", methods=["POST"])
+def chat_compat():
+    result = ask()
+    if isinstance(result, tuple):
+        return result
+    data = result.get_json() if hasattr(result, "get_json") else {}
+    return jsonify({"reply": data.get("answer", "Nem kaptam választ.")})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
-
