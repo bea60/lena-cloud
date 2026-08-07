@@ -1,6 +1,8 @@
 import os
 import json
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 import requests
@@ -61,6 +63,17 @@ def clean_news_answer(text):
     text = re.sub(r'\s+', ' ', text).strip()
 
     return text
+
+
+
+def get_time():
+    """Pontos helyi idő Izraelben."""
+    try:
+        now = datetime.now(ZoneInfo("Asia/Jerusalem"))
+        return f"Petah Tikvában most {now.strftime('%H:%M')} van."
+    except Exception as e:
+        print("IDŐ HIBA:", e)
+        return "Most nem sikerült lekérnem a pontos időt."
 
 
 def get_weather(city="Petah Tikva"):
@@ -149,10 +162,57 @@ def extract_city_with_ai(message):
     return extract_city_simple(message)
 
 
+def is_time_question(message):
+    lower = message.lower().strip()
+
+    time_phrases = [
+        "mennyi az idő",
+        "mennyi az ido",
+        "hány óra",
+        "hany ora",
+        "hány óra van",
+        "hany ora van",
+        "pontos idő",
+        "pontos ido",
+        "most hány óra",
+        "most hany ora",
+        "most mennyi az idő",
+        "most mennyi az ido",
+        "mit mutat az óra",
+        "mit mutat az ora"
+    ]
+
+    return any(phrase in lower for phrase in time_phrases)
+
+
 def is_weather_question(message):
-    lower = message.lower()
-    words = ["idő", "ido", "időjárás", "idojaras", "hány fok", "hany fok", "meleg", "hideg", "esik", "eső", "eso"]
-    return any(w in lower for w in words)
+    lower = message.lower().strip()
+
+    # Fontos: az önálló "idő" szó NEM elég, mert a
+    # "Mennyi az idő?" kérdés a pontos időre vonatkozik.
+    weather_phrases = [
+        "időjárás",
+        "idojaras",
+        "milyen az idő",
+        "milyen az ido",
+        "milyen idő van",
+        "milyen ido van",
+        "milyen idő lesz",
+        "milyen ido lesz",
+        "hány fok",
+        "hany fok",
+        "hőmérséklet",
+        "homerseklet",
+        "meleg van",
+        "hideg van",
+        "esik az eső",
+        "esik az eso",
+        "fog esni",
+        "eső lesz",
+        "eso lesz"
+    ]
+
+    return any(phrase in lower for phrase in weather_phrases)
 
 
 def is_internet_question(message):
@@ -753,6 +813,9 @@ def ask():
 
     if not message:
         return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
+
+    if is_time_question(message):
+        return jsonify({"answer": get_time()})
 
     if is_weather_question(message):
         city = extract_city_with_ai(message)
