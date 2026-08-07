@@ -1,285 +1,98 @@
-import os
-import json
-import re
-from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template_string
-from openai import OpenAI
-import requests
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Léna 3.0</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{--purple:#6f10d8;--purple2:#8f27ff;--dark:#261315;--bg:#f8f2ff;--card:#fff;--text:#2b2230;--muted:#776f7c;--user:#eadcff;--line:#e8dff0;--ok:#26b566;--warn:#d18b00;--shadow:0 8px 24px rgba(87,42,140,.12)}
+body.dark{--bg:#151119;--card:#231b29;--text:#f7f2fa;--muted:#bbb1c1;--user:#503168;--line:#3b3042;--dark:#160d19;--shadow:0 8px 24px rgba(0,0,0,.24)}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}button,input,select,textarea{font:inherit}
+#app{height:100%;display:flex;flex-direction:column;background:linear-gradient(180deg,var(--bg),var(--bg))}
+.topbar{height:52px;flex:0 0 52px;background:var(--dark);color:#fff;padding:5px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 18px rgba(0,0,0,.15)}
+.topbar .brand{font-size:26px;font-weight:600;flex:1}.topIcon{border:0;background:transparent;color:#fff;font-size:24px;padding:6px;border-radius:12px}
+.hero{flex:0 0 138px;background:linear-gradient(135deg,#490071,#3b0059);color:#fff;border-bottom-left-radius:32px;border-bottom-right-radius:32px;display:flex;align-items:center;justify-content:center;gap:16px;padding:16px;box-shadow:0 9px 24px rgba(55,0,80,.20)}
+.avatar{width:74px;height:74px;border-radius:50%;position:relative;flex:0 0 auto;background:linear-gradient(145deg,#fff,#eadcff);border:3px solid rgba(255,255,255,.78);box-shadow:0 10px 22px rgba(0,0,0,.18);transition:.2s ease}
+.eye{position:absolute;top:26px;width:13px;height:15px;border-radius:50%;background:#4f146d;animation:blink 5.2s infinite}.eye.left{left:19px}.eye.right{right:19px}.eye:after{content:"";position:absolute;width:4px;height:4px;border-radius:50%;background:#fff;top:3px;left:4px}.mouth{position:absolute;left:50%;top:50px;width:25px;height:9px;transform:translateX(-50%);border:3px solid #8a28ea;border-top:0;border-radius:0 0 22px 22px}.avatar.speaking .mouth{border:0;background:#8a28ea;width:20px;height:17px;border-radius:50%;animation:talk .22s infinite alternate}.avatar.listening{animation:pulse 1s infinite}.avatar.listening:after{content:"";position:absolute;inset:-7px;border:3px solid rgba(255,255,255,.55);border-radius:50%;animation:ring 1.1s infinite}
+@keyframes blink{0%,45%,48%,100%{transform:scaleY(1)}46%,47%{transform:scaleY(.08)}}@keyframes talk{from{transform:translateX(-50%) scaleY(.5)}to{transform:translateX(-50%) scaleY(1.15)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}@keyframes ring{0%{transform:scale(.86);opacity:.9}100%{transform:scale(1.18);opacity:0}}
+.heroText h1{font-size:36px;line-height:1;margin:0 0 9px;font-weight:500}.heroText p{margin:0;font-size:15px;opacity:.95}.statusline{margin-top:8px;font-size:12px;opacity:.9}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:5px}.dot.off{background:#e74c3c}.assistantState{display:inline-flex;align-items:center;gap:5px;margin-left:10px;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.13);font-weight:700}.assistantState.thinking{animation:statePulse 1s infinite}.assistantState.listening{background:rgba(91,220,160,.20)}.assistantState.speaking{background:rgba(198,150,255,.22)}@keyframes statePulse{0%,100%{opacity:.65}50%{opacity:1}}
+.view{display:none;flex:1;min-height:0;overflow-y:auto}.view.active{display:flex;flex-direction:column}
+#messages{flex:1;overflow-y:auto;padding:18px 16px 12px;scroll-behavior:smooth}.msg{max-width:84%;width:fit-content;margin:10px 0;padding:14px 18px;border-radius:23px;font-size:18px;line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:var(--shadow);animation:pop .18s ease-out}.msg.lena{margin-right:auto;background:var(--card);border-bottom-left-radius:8px}.msg.user{margin-left:auto;background:var(--user);border-bottom-right-radius:8px;text-align:right}@keyframes pop{from{opacity:0;transform:translateY(5px) scale(.99)}}
+.typing{display:flex;align-items:center;gap:6px;min-width:76px}.typing span{width:8px;height:8px;background:#8a28ea;border-radius:50%;animation:typingDot 1.1s infinite}.typing span:nth-child(2){animation-delay:.16s}.typing span:nth-child(3){animation-delay:.32s}@keyframes typingDot{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1}}
+#composer{flex:0 0 auto;background:var(--card);box-shadow:0 -7px 24px rgba(73,33,116,.08);padding:10px 10px 8px}.inputRow{display:flex;align-items:center;gap:8px}#textInput{flex:1;min-width:0;height:52px;border:1px solid var(--line);border-radius:28px;padding:0 17px;font-size:18px;outline:none;background:var(--card);color:var(--text)}#textInput:focus{border-color:#a56cf2;box-shadow:0 0 0 3px rgba(123,34,255,.08)}.sendBtn{width:52px;height:52px;min-width:52px;border:0;border-radius:50%;background:linear-gradient(145deg,#8d25f4,#6b16df);color:#fff;font-size:25px;display:grid;place-items:center;box-shadow:0 7px 18px rgba(112,33,211,.28)}.sendBtn:active{transform:scale(.94)}.sendBtn:disabled{opacity:.45}.tools{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px}.tool{min-height:60px;border:0;border-radius:18px;background:#450062;color:#fff;font-size:12px;padding:6px 2px}.tool .ico{display:block;font-size:21px;margin-bottom:3px}.tool.listening{animation:buttonPulse 1s infinite;background:#6d0ca0}.tool.off{opacity:.62}@keyframes buttonPulse{0%,100%{box-shadow:0 0 0 0 rgba(123,34,255,.32)}50%{box-shadow:0 0 0 9px rgba(123,34,255,0)}}
+.panel{padding:18px 16px 96px}.sectionTitle{font-size:24px;font-weight:700;margin:3px 0 14px;color:var(--text)}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}.card h3{margin:0 0 10px;color:var(--purple)}.muted{color:var(--muted);font-size:13px}.row{display:flex;align-items:center;gap:10px;margin:10px 0}.row label{flex:1}.control,input.setting,select.setting,textarea.setting{width:100%;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:15px;padding:12px;outline:none}.btn{border:0;border-radius:16px;padding:11px 14px;background:var(--purple);color:#fff}.btn.secondary{background:#eee6f5;color:#392b42}.dark .btn.secondary{background:#3d3145;color:#fff}.btn.danger{background:#b93555}.switch{position:relative;width:50px;height:28px;background:#cfc6d4;border-radius:20px;flex:0 0 auto}.switch.on{background:var(--purple2)}.switch:after{content:"";position:absolute;width:22px;height:22px;border-radius:50%;background:#fff;top:3px;left:3px;transition:.18s}.switch.on:after{left:25px}.memoryItem,.moodItem{padding:10px 0;border-bottom:1px solid var(--line)}.memoryItem:last-child,.moodItem:last-child{border-bottom:0}.moodBadge{display:inline-block;padding:5px 9px;border-radius:12px;background:#eee5ff;color:#5b1c95;font-size:12px;margin-left:6px}.dark .moodBadge{background:#4b3560;color:#f5eaff}.statusGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.statusBox{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px}.statusBox strong{display:block;font-size:16px;margin-bottom:5px}.logBox{white-space:pre-wrap;background:#151119;color:#e7dff0;border-radius:14px;padding:12px;max-height:220px;overflow:auto;font-family:monospace;font-size:12px}
+.bottomNav{height:72px;flex:0 0 72px;display:grid;grid-template-columns:repeat(4,1fr);background:var(--card);border-top:1px solid var(--line);padding-bottom:max(3px,env(safe-area-inset-bottom));z-index:12}.navBtn{border:0;background:transparent;color:var(--muted);font-size:11px}.navBtn strong{display:block;font-size:22px;margin-bottom:2px}.navBtn.on{color:var(--purple);font-weight:700}
+.modalBackdrop{display:none;position:fixed;inset:0;background:rgba(22,10,28,.48);z-index:30;align-items:center;justify-content:center;padding:18px}.modalBackdrop.open{display:flex}.modal{width:min(520px,100%);max-height:78vh;overflow:auto;background:var(--card);border-radius:25px;padding:18px;box-shadow:0 18px 48px rgba(0,0,0,.25)}.modal h2{margin:0 0 12px;color:var(--purple)}.modalActions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+@media(max-height:700px){.hero{flex-basis:110px}.avatar{width:60px;height:60px}.eye{top:21px}.eye.left{left:15px}.eye.right{right:15px}.mouth{top:40px}.heroText h1{font-size:30px}.msg{font-size:16px;padding:12px 15px}.tools{display:none}.bottomNav{height:62px;flex-basis:62px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar"><div class="brand">Léna 3.0</div><button class="topIcon" onclick="showView('setup')" aria-label="Beállítások">⚙️</button></div>
+  <section class="hero">
+    <div id="avatar" class="avatar"><div class="eye left"></div><div class="eye right"></div><div class="mouth"></div></div>
+    <div class="heroText"><h1>Léna 💜</h1><p>A te személyes AI asszisztensed</p><div class="statusline"><span id="serverDot" class="dot"></span><span id="serverText">Szerver ellenőrzése…</span><span id="assistantState" class="assistantState">💜 Készen állok</span></div></div>
+  </section>
 
-app = Flask(__name__)
+  <section id="chatView" class="view active">
+    <div id="messages"><div class="msg lena">Léna: Szia Bea, Léna vagyok. Itt vagyok veled. 💜</div></div>
+    <div id="composer">
+      <div class="inputRow"><input id="textInput" type="text" autocomplete="off" placeholder="Írj Lénának..." onkeydown="if(event.key==='Enter') sendMessage()"><button id="sendBtn" class="sendBtn" onclick="sendMessage()">➤</button></div>
+      <div class="tools"><button id="micBtn" class="tool" onclick="startVoice()"><span class="ico">🎤</span>Mikrofon</button><button id="speechBtn" class="tool" onclick="toggleSpeech()"><span class="ico">🔊</span><span id="speechLabel">Beszéd: be</span></button><button class="tool" onclick="showView('memory')"><span class="ico">🧠</span>Memória</button><button class="tool" onclick="clearChat()"><span class="ico">🧹</span>Törlés</button></div>
+    </div>
+  </section>
 
-@app.after_request
-def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
-MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-MEMORY_FILE = os.environ.get("LENA_MEMORY_FILE", "memory.json")
+  <section id="memoryView" class="view"><div class="panel"><div class="sectionTitle">🧠 Memória és napló</div><div class="card"><h3>Új emlék</h3><textarea id="memoryText" class="setting" rows="3" placeholder="Például: szeretem a kávét"></textarea><div class="modalActions"><button class="btn" onclick="saveMemory()">Megjegyzem</button><button class="btn secondary" onclick="refreshMemory()">Frissítés</button></div></div><div class="card"><h3>Elmentett emlékek</h3><div id="memoryList" class="muted">Betöltés…</div></div><div class="card"><h3>😊 Hangulatnapló</h3><div class="row"><button class="btn" onclick="saveMood('jól','😊')">😊 Jól vagyok</button><button class="btn secondary" onclick="saveMood('nem jól','😔')">😔 Nem vagyok jól</button></div><div id="moodList" class="muted">Betöltés…</div></div></div></section>
 
-DEFAULT_MEMORIES = [
-    "A felhasználó Bea.",
-    "Léna telefonon fut Android alkalmazásban.",
-    "Léna magyarul, kedvesen és röviden válaszol."
-]
+  <section id="profileView" class="view"><div class="panel"><div class="sectionTitle">👤 Profil</div><div class="card"><h3>Személyes beállítások</h3><label class="muted">Megjelenő név</label><input id="profileName" class="setting" value="Bea"><label class="muted">LÉNA neve</label><input id="assistantName" class="setting" value="Léna"><div class="modalActions"><button class="btn" onclick="saveProfile()">Mentés</button></div></div><div class="card"><h3>Kapcsolatok</h3><p class="muted">A hosszú távú személyes adatokat továbbra is a LÉNA memória kezeli. Itt csak az alkalmazás megjelenése állítható.</p></div><div class="card"><h3>Robot</h3><div class="statusGrid"><div class="statusBox"><strong>Raspberry Pi</strong><span id="piStatus" class="muted">Nincs ellenőrizve</span></div><div class="statusBox"><strong>ESP32</strong><span id="espStatus" class="muted">Nincs ellenőrizve</span></div></div><p class="muted">A robotkapcsolat akkor válik aktívvá, amikor a szerveren elkészülnek a hozzá tartozó végpontok.</p></div></div></section>
 
-def normalize_memory_item(text):
-    return re.sub(r"\s+", " ", (text or "")).strip(" .!;\n\t")[:500]
+  <section id="setupView" class="view"><div class="panel"><div class="sectionTitle">⚙️ Setup</div>
+    <div class="card"><h3>Kapcsolat</h3><label class="muted">LÉNA szerver címe</label><input id="serverUrl" class="setting" placeholder="https://...railway.app"><p class="muted">Alapértelmezett LÉNA szerver. Nem szükséges törölni vagy átírni.</p><div class="modalActions"><button class="btn" onclick="saveSetup()">Mentés</button><button class="btn secondary" onclick="testServer(true)">Szerver teszt</button></div></div>
+    <div class="card"><h3>Hang és beszéd</h3><div class="row"><label>Automatikus felolvasás</label><div id="speechSwitch" class="switch" onclick="toggleSpeech()"></div></div><div class="row"><label>Folyamatos beszélgetés</label><div id="continuousSwitch" class="switch" onclick="toggleContinuous()"></div></div><p class="muted">Bekapcsolva Léna a válasz után újra hallgatni próbál.</p><label class="muted">Beszéd nyelve</label><select id="voiceLang" class="setting"><option value="hu-HU">Magyar</option><option value="he-IL">Héber</option><option value="en-US">Angol</option></select><label class="muted">Beszéd sebessége</label><input id="voiceRate" class="setting" type="range" min="0.7" max="1.3" step="0.05" value="0.95"><label class="muted">Mikrofon nyelve</label><select id="micLang" class="setting"><option value="hu-HU">Magyar</option><option value="he-IL">Héber</option><option value="en-US">Angol</option></select></div>
+    <div class="card"><h3>Megjelenés</h3><div class="row"><label>Sötét mód</label><div id="darkSwitch" class="switch" onclick="toggleDark()"></div></div><div class="row"><label>Gépelési animáció</label><div id="typingSwitch" class="switch on" onclick="toggleTyping()"></div></div></div>
+    <div class="card"><h3>Adatok</h3><div class="modalActions"><button class="btn secondary" onclick="exportSettings()">Beállítások exportálása</button><button class="btn danger" onclick="resetLocalSettings()">Helyi beállítások törlése</button></div><p class="muted">Az OpenAI API-kulcsot biztonsági okból nem a telefonos Setup tárolja; az a Railway környezeti változói között marad.</p></div>
+    <div class="card"><h3>Fejlesztői mód</h3><div class="row"><label>Diagnosztika</label><div id="devSwitch" class="switch" onclick="toggleDev()"></div></div><div id="devPanel" style="display:none"><div class="modalActions"><button class="btn secondary" onclick="testServer(true)">/health teszt</button><button class="btn secondary" onclick="refreshMemory()">/memory teszt</button></div><div id="logBox" class="logBox">LÉNA 3.0 diagnosztika</div></div></div>
+  </div></section>
 
-def _empty_store():
-    return {"memories": DEFAULT_MEMORIES.copy(), "moods": [], "updated_at": None}
-
-def load_memory():
-    data = _empty_store()
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-            if isinstance(saved, dict):
-                saved_memories = saved.get("memories", [])
-                if isinstance(saved_memories, list):
-                    existing = {x.casefold() for x in data["memories"]}
-                    for item in saved_memories:
-                        item = normalize_memory_item(item)
-                        if item and item.casefold() not in existing:
-                            data["memories"].append(item)
-                            existing.add(item.casefold())
-                moods = saved.get("moods", [])
-                if isinstance(moods, list):
-                    data["moods"] = moods[-365:]
-                data["updated_at"] = saved.get("updated_at")
-        except Exception as e:
-            print("MEMÓRIA OLVASÁSI HIBA:", e)
-    return data
-
-def save_memory(data):
-    data["memories"] = data.get("memories", [])[-200:]
-    data["moods"] = data.get("moods", [])[-365:]
-    data["updated_at"] = datetime.now().isoformat(timespec="seconds")
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def add_memory(text):
-    text = normalize_memory_item(text)
-    if not text:
-        return False
-    data = load_memory()
-    if text.casefold() in {x.casefold() for x in data["memories"]}:
-        return False
-    data["memories"].append(text)
-    save_memory(data)
-    return True
-
-def forget_memory(text):
-    needle = normalize_memory_item(text).casefold()
-    if not needle:
-        return 0
-    data = load_memory()
-    old = data["memories"]
-    kept = [x for x in old if needle not in x.casefold()]
-    removed = len(old) - len(kept)
-    data["memories"] = kept
-    if removed:
-        save_memory(data)
-    return removed
-
-def memory_text():
-    return "\n".join(f"- {m}" for m in load_memory()["memories"])
-
-def add_mood(mood, emoji="💜", note=""):
-    mood = normalize_memory_item(mood)
-    note = normalize_memory_item(note)
-    if not mood:
-        return None
-    data = load_memory()
-    entry = {
-        "date": datetime.now().date().isoformat(),
-        "time": datetime.now().strftime("%H:%M"),
-        "mood": mood,
-        "emoji": emoji or "💜",
-        "note": note
-    }
-    data["moods"].append(entry)
-    save_memory(data)
-    return entry
-
-def mood_for_date(target_date):
-    moods = [m for m in load_memory().get("moods", []) if m.get("date") == target_date.isoformat()]
-    return moods[-1] if moods else None
-
-def detect_mood(message):
-    lower = message.lower().strip()
-    rules = [
-        (r"\b(ma\s+)?nem\s+vagyok\s+jól\b", "nem jól", "😔"),
-        (r"\b(ma\s+)?rosszul\s+vagyok\b", "rosszul", "😔"),
-        (r"\b(ma\s+)?szomorú\s+vagyok\b", "szomorú", "😢"),
-        (r"\b(ma\s+)?fáradt\s+vagyok\b", "fáradt", "😴"),
-        (r"\b(ma\s+)?mérges\s+vagyok\b", "mérges", "😠"),
-        (r"\b(ma\s+)?boldog\s+vagyok\b", "boldog", "😊"),
-        (r"\b(ma\s+)?jól\s+vagyok\b", "jól", "😊"),
-    ]
-    for pattern, mood, emoji in rules:
-        if re.search(pattern, lower, re.IGNORECASE):
-            return mood, emoji
-    return None
-
-def extract_memory_request(message):
-    triggers = ["jegyezd meg, hogy", "jegyezd meg hogy", "jegyezd meg", "emlékezz rá, hogy", "emlékezz rá hogy", "mentsd el, hogy", "mentsd el hogy", "ne felejtsd el, hogy", "ne felejtsd el hogy"]
-    lower = message.lower()
-    for trigger in triggers:
-        pos = lower.find(trigger)
-        if pos >= 0:
-            return normalize_memory_item(message[pos + len(trigger):])
-    return None
-
-def extract_forget_request(message):
-    triggers = ["felejtsd el, hogy", "felejtsd el hogy", "töröld a memóriából, hogy", "töröld a memóriából hogy", "ne emlékezz arra, hogy", "ne emlékezz arra hogy"]
-    lower = message.lower()
-    for trigger in triggers:
-        pos = lower.find(trigger)
-        if pos >= 0:
-            return normalize_memory_item(message[pos + len(trigger):])
-    return None
-
-def is_weather_question(message):
-    lower = message.lower()
-    return any(w in lower for w in ["időjárás", "idojaras", "hány fok", "hany fok", "meleg van", "hideg van", "esik az eső", "esik az eso"])
-
-def extract_city_simple(message):
-    lower = message.lower()
-    for city in ["petah tikva", "tel aviv", "jerusalem", "jeruzsálem", "haifa", "eilat"]:
-        if city in lower:
-            return city.title()
-    return "Petah Tikva"
-
-def get_weather(city="Petah Tikva"):
-    try:
-        if not WEATHER_API_KEY:
-            return "Az időjárás-kulcs nincs beállítva a szerveren."
-        r = requests.get("https://api.openweathermap.org/data/2.5/weather", params={"q": city, "appid": WEATHER_API_KEY, "units": "metric", "lang": "hu"}, timeout=10)
-        data = r.json()
-        if r.status_code != 200:
-            return f"Nem találtam időjárást erre a városra: {city}."
-        temp = round(data["main"]["temp"])
-        feels = round(data["main"].get("feels_like", data["main"]["temp"]))
-        desc = data["weather"][0]["description"]
-        return f"{data.get('name', city)} városában most {temp} fok van, {desc}. Hőérzet: {feels} fok."
-    except Exception as e:
-        print("WEATHER HIBA:", e)
-        return "Most nem sikerült lekérnem az időjárást."
-
-HTML = """<!doctype html><html lang='hu'><head><meta charset='utf-8'><title>Léna</title></head><body style='font-family:Arial;padding:30px'><h1>Léna 💜</h1><p>A szerver működik.</p></body></html>"""
-
-@app.route("/")
-def home():
-    return render_template_string(HTML)
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"ok": True, "service": "LENA", "version": "2.0", "time": datetime.now().isoformat(timespec="seconds")})
-
-@app.route("/memory", methods=["GET"])
-def memory_api():
-    data = load_memory()
-    return jsonify({"memories": data["memories"], "updated_at": data.get("updated_at")})
-
-@app.route("/memory", methods=["POST"])
-def memory_add_api():
-    payload = request.get_json() or {}
-    text = normalize_memory_item(payload.get("text", ""))
-    if not text:
-        return jsonify({"ok": False, "message": "Nincs mit megjegyezni."}), 400
-    added = add_memory(text)
-    return jsonify({"ok": True, "added": added, "message": "Megjegyeztem. 💜" if added else "Ezt már tudtam. 💜"})
-
-@app.route("/memory/forget", methods=["POST"])
-def memory_forget_api():
-    payload = request.get_json() or {}
-    text = normalize_memory_item(payload.get("text", ""))
-    if not text:
-        return jsonify({"ok": False, "message": "Nincs megadva, mit felejtsek el."}), 400
-    return jsonify({"ok": True, "removed": forget_memory(text)})
-
-@app.route("/mood", methods=["GET", "POST"])
-def mood_api():
-    if request.method == "GET":
-        return jsonify({"moods": load_memory().get("moods", [])})
-    payload = request.get_json() or {}
-    entry = add_mood(payload.get("mood", ""), payload.get("emoji", "💜"), payload.get("note", ""))
-    if not entry:
-        return jsonify({"ok": False, "message": "Nincs megadva hangulat."}), 400
-    return jsonify({"ok": True, "entry": entry})
-
-@app.route("/ask", methods=["POST"])
-def ask():
-    payload = request.get_json() or {}
-    message = (payload.get("message") or "").strip()
-    if not message:
-        return jsonify({"answer": "Írj valamit, és válaszolok. 💜"})
-
-    lower = message.lower()
-    if "hogy voltam tegnap" in lower or "hogy éreztem magam tegnap" in lower:
-        m = mood_for_date(datetime.now().date() - timedelta(days=1))
-        return jsonify({"answer": f"Tegnap azt jegyeztem fel, hogy {m['emoji']} {m['mood']} voltál. 💜" if m else "Tegnapról még nincs hangulatbejegyzésem."})
-    if "hogy vagyok ma" in lower or "hogy voltam ma" in lower:
-        m = mood_for_date(datetime.now().date())
-        return jsonify({"answer": f"Ma azt jegyeztem fel, hogy {m['emoji']} {m['mood']} vagy. 💜" if m else "Mára még nincs hangulatbejegyzésem."})
-
-    forget = extract_forget_request(message)
-    if forget:
-        removed = forget_memory(forget)
-        return jsonify({"answer": "Elfelejtettem. 💜" if removed else "Nem találtam ilyen emléket."})
-
-    fact = extract_memory_request(message)
-    if fact:
-        mood = detect_mood(fact)
-        if mood:
-            add_mood(mood[0], mood[1], fact)
-        added = add_memory(fact)
-        if mood:
-            if mood[0] == "jól":
-                return jsonify({"answer": "Örülök, hogy ma jól vagy. Megjegyeztem. 💜"})
-            return jsonify({"answer": "Megjegyeztem, hogyan érzed magad ma. 💜"})
-        return jsonify({"answer": "Megjegyeztem. 💜" if added else "Ezt már tudtam. 💜"})
-
-    mood = detect_mood(message)
-    if mood:
-        add_mood(mood[0], mood[1], message)
-
-    if is_weather_question(message):
-        return jsonify({"answer": get_weather(extract_city_simple(message))})
-
-    try:
-        memories = memory_text()
-        recent_moods = load_memory().get("moods", [])[-7:]
-        mood_context = "\n".join(f"- {m.get('date')}: {m.get('emoji','')} {m.get('mood','')}" for m in recent_moods)
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": (
-                    "Te Léna vagy, egy kedves magyar AI asszisztens. Mindig magyarul válaszolj, hacsak a felhasználó más nyelvet nem kér. "
-                    "Válaszolj természetesen, röviden és melegen. Ne találj ki személyes tényeket. "
-                    "A tartós emlékek:\n" + memories + "\n\nAz utóbbi hangulatbejegyzések:\n" + mood_context
-                )},
-                {"role": "user", "content": message}
-            ]
-        )
-        answer = (response.choices[0].message.content or "").strip() or "Nem kaptam választ."
-        return jsonify({"answer": answer})
-    except Exception as e:
-        print("HIBA:", repr(e))
-        return jsonify({"answer": "Most nem sikerült válaszolnom. A szerver naplójában látszik a pontos hiba."}), 200
-
-# Kompatibilitás régebbi HTML-verziókkal.
-@app.route("/chat", methods=["POST"])
-def chat_compat():
-    result = ask()
-    if isinstance(result, tuple):
-        return result
-    data = result.get_json() if hasattr(result, "get_json") else {}
-    return jsonify({"reply": data.get("answer", "Nem kaptam választ.")})
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+  <nav class="bottomNav"><button id="navChat" class="navBtn on" onclick="showView('chat')"><strong>💬</strong>Chat</button><button id="navMemory" class="navBtn" onclick="showView('memory')"><strong>🧠</strong>Memória</button><button id="navProfile" class="navBtn" onclick="showView('profile')"><strong>👤</strong>Profil</button><button id="navSetup" class="navBtn" onclick="showView('setup')"><strong>⚙️</strong>Setup</button></nav>
+</div>
+<script>
+const state={speechOn:localStorage.getItem('lenaSpeech')!=='off',continuous:localStorage.getItem('lenaContinuous')==='on',dark:localStorage.getItem('lenaDark')==='on',typing:localStorage.getItem('lenaTyping')!=='off',dev:localStorage.getItem('lenaDev')==='on',busy:false,currentRecognition:null,speakingTimer:null,restartTimer:null};
+const $=id=>document.getElementById(id);const avatar=$('avatar'),micBtn=$('micBtn'),sendBtn=$('sendBtn');
+function log(msg){const t=new Date().toLocaleTimeString();const box=$('logBox');if(box)box.textContent+='\n['+t+'] '+msg;}
+const DEFAULT_SERVER='https://respectful-courage-production-0fef.up.railway.app';
+function apiBase(){const saved=(localStorage.getItem('lenaServerUrl')||'').trim().replace(/\/$/,'');return saved||DEFAULT_SERVER;}
+function apiUrl(path){const base=apiBase();return base?base+path:path;}
+function showView(name){['chat','memory','profile','setup'].forEach(n=>{ $(n+'View').classList.toggle('active',n===name);$('nav'+n[0].toUpperCase()+n.slice(1)).classList.toggle('on',n===name);});if(name==='memory'){refreshMemory();refreshMood();}if(name==='setup')loadSetup();}
+function setAssistantState(mode,text){const el=$('assistantState');if(!el)return;el.className='assistantState '+(mode||'');el.textContent=text||'💜 Készen állok'}
+function maybeRestartListening(){if(!state.continuous||state.busy||document.hidden)return;if(state.restartTimer)clearTimeout(state.restartTimer);state.restartTimer=setTimeout(()=>{if(!state.busy&&!state.currentRecognition)startVoice(true)},700)}
+function setSpeaking(on){avatar.classList.toggle('speaking',!!on);if(on){setAssistantState('speaking','🗣️ Beszélek')}else{if(state.speakingTimer){clearTimeout(state.speakingTimer);state.speakingTimer=null}setAssistantState('','💜 Készen állok');maybeRestartListening()}}
+function setListening(on){avatar.classList.toggle('listening',!!on);micBtn.classList.toggle('listening',!!on);setAssistantState(on?'listening':'',on?'🎤 Hallgatlak':'💜 Készen állok')}
+function updateSwitches(){$('speechLabel').textContent=state.speechOn?'Beszéd: be':'Beszéd: ki';$('speechBtn').classList.toggle('off',!state.speechOn);$('speechSwitch').classList.toggle('on',state.speechOn);$('continuousSwitch').classList.toggle('on',state.continuous);$('darkSwitch').classList.toggle('on',state.dark);$('typingSwitch').classList.toggle('on',state.typing);$('devSwitch').classList.toggle('on',state.dev);$('devPanel').style.display=state.dev?'block':'none';document.body.classList.toggle('dark',state.dark)}
+function addMessage(text,type){const d=document.createElement('div');d.className='msg '+type;d.textContent=(type==='user'?'Te: ':'Léna: ')+text;$('messages').appendChild(d);$('messages').scrollTop=$('messages').scrollHeight;return d}
+function addTyping(){const d=document.createElement('div');d.className='msg lena typing';d.id='typingBubble';d.innerHTML='<span></span><span></span><span></span>';$('messages').appendChild(d);return d}function removeTyping(){const t=$('typingBubble');if(t)t.remove()}
+async function typeLena(text){if(!state.typing){addMessage(text,'lena');return}const d=document.createElement('div');d.className='msg lena';$('messages').appendChild(d);let i=0;const step=Math.max(6,Math.min(20,900/Math.max(text.length,1)));return new Promise(resolve=>{const timer=setInterval(()=>{i+=Math.max(1,Math.ceil(text.length/90));d.textContent='Léna: '+text.slice(0,i);$('messages').scrollTop=$('messages').scrollHeight;if(i>=text.length){clearInterval(timer);d.textContent='Léna: '+text;resolve()}},step)})}
+async function sendMessage(){if(state.busy)return;const text=$('textInput').value.trim();if(!text)return;addMessage(text,'user');$('textInput').value='';state.busy=true;sendBtn.disabled=true;setAssistantState('thinking','🤔 Gondolkodom');addTyping();try{const c=new AbortController();const timeout=setTimeout(()=>c.abort(),30000);log('POST '+apiUrl('/ask'));const r=await fetch(apiUrl('/ask'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text}),signal:c.signal});clearTimeout(timeout);if(!r.ok)throw new Error('HTTP '+r.status);const data=await r.json();const reply=data.answer||data.reply||'Nem kaptam választ.';removeTyping();await typeLena(reply);if(state.speechOn)speakText(reply);else setAssistantState('','💜 Készen állok');log('Válasz OK')}catch(e){removeTyping();addMessage(e.name==='AbortError'?'A válasz túl sokáig tartott. Próbáld újra.':'Nem kaptam választ. Ellenőrizd a szervert.','lena');setAssistantState('','💜 Készen állok');log('HIBA: '+e.message)}finally{state.busy=false;sendBtn.disabled=false;if(state.continuous&&!state.speechOn)maybeRestartListening()}}
+function startVoice(auto=false){if(state.busy)return;if(state.currentRecognition){try{state.currentRecognition.abort()}catch(e){}state.currentRecognition=null}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){if(!auto)addMessage('A beszédfelismerés ezen az eszközön nem érhető el.','lena');return}try{const r=new SR();state.currentRecognition=r;r.lang=localStorage.getItem('lenaMicLang')||'hu-HU';r.continuous=false;r.interimResults=false;r.onstart=()=>setListening(true);r.onend=()=>{setListening(false);state.currentRecognition=null};r.onerror=e=>{setListening(false);state.currentRecognition=null;log('Mikrofon hiba: '+e.error)};r.onresult=e=>{$('textInput').value=e.results[0][0].transcript;sendMessage()};r.start()}catch(e){setListening(false);state.currentRecognition=null;log('Mikrofon indítási hiba')}}
+function toggleContinuous(){state.continuous=!state.continuous;localStorage.setItem('lenaContinuous',state.continuous?'on':'off');if(!state.continuous&&state.currentRecognition){try{state.currentRecognition.abort()}catch(e){}state.currentRecognition=null;setListening(false)}updateSwitches()}
+function toggleSpeech(){state.speechOn=!state.speechOn;localStorage.setItem('lenaSpeech',state.speechOn?'on':'off');if(!state.speechOn){if(window.AndroidSpeech&&window.AndroidSpeech.stop){try{window.AndroidSpeech.stop()}catch(e){}}if('speechSynthesis'in window)speechSynthesis.cancel();setSpeaking(false)}updateSwitches()}
+function speakText(text){if(!state.speechOn)return;setSpeaking(true);if(window.AndroidSpeech&&window.AndroidSpeech.speak){try{window.AndroidSpeech.speak(text);state.speakingTimer=setTimeout(()=>setSpeaking(false),Math.min(14000,Math.max(1400,text.length*68)));return}catch(e){}}if(!('speechSynthesis'in window)){setSpeaking(false);return}speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=localStorage.getItem('lenaVoiceLang')||'hu-HU';u.rate=parseFloat(localStorage.getItem('lenaVoiceRate')||'0.95');u.pitch=1.05;u.onend=()=>setSpeaking(false);u.onerror=()=>setSpeaking(false);speechSynthesis.speak(u)}
+async function refreshMemory(){const box=$('memoryList');box.textContent='Betöltés…';try{const r=await fetch(apiUrl('/memory'));if(!r.ok)throw new Error('HTTP '+r.status);const data=await r.json();const list=data.memories||[];box.innerHTML=list.length?list.map((x,i)=>'<div class="memoryItem">'+(i+1)+'. '+escapeHtml(x)+'</div>').join(''):'Még nincs elmentett emlék.';log('/memory OK')}catch(e){box.textContent='A memória most nem tölthető be.';log('/memory HIBA: '+e.message)}}
+async function saveMemory(){const t=$('memoryText').value.trim();if(!t)return;$('memoryText').value='';$('textInput').value='jegyezd meg, hogy '+t;showView('chat');await sendMessage()}
+async function saveMood(mood,emoji){try{const r=await fetch(apiUrl('/mood'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mood,emoji})});if(!r.ok)throw new Error();await refreshMood();addMessage('Hangulat elmentve: '+emoji+' '+mood,'lena')}catch(e){$('textInput').value='jegyezd meg, hogy ma '+mood+' vagyok';showView('chat');sendMessage()}}
+async function refreshMood(){const box=$('moodList');box.textContent='Betöltés…';try{const r=await fetch(apiUrl('/mood'));if(!r.ok)throw new Error();const data=await r.json();const list=data.moods||[];box.innerHTML=list.length?list.slice().reverse().slice(0,14).map(x=>'<div class="moodItem"><strong>'+escapeHtml(x.date||'')+'</strong><span class="moodBadge">'+escapeHtml((x.emoji||'💜')+' '+(x.mood||''))+'</span></div>').join(''):'Még nincs hangulatbejegyzés.'}catch(e){box.textContent='A hangulatnapló a szerver frissítése után lesz elérhető.'}}
+function clearChat(){$('messages').innerHTML='<div class="msg lena">Léna: Itt vagyok. 💜</div>';if('speechSynthesis'in window)speechSynthesis.cancel();setSpeaking(false)}
+function loadSetup(){$('serverUrl').value=localStorage.getItem('lenaServerUrl')||DEFAULT_SERVER;$('voiceLang').value=localStorage.getItem('lenaVoiceLang')||'hu-HU';$('voiceRate').value=localStorage.getItem('lenaVoiceRate')||'0.95';$('micLang').value=localStorage.getItem('lenaMicLang')||'hu-HU';$('profileName').value=localStorage.getItem('lenaProfileName')||'Bea';$('assistantName').value=localStorage.getItem('lenaAssistantName')||'Léna';updateSwitches()}
+function saveSetup(){localStorage.setItem('lenaServerUrl',$('serverUrl').value.trim());localStorage.setItem('lenaVoiceLang',$('voiceLang').value);localStorage.setItem('lenaVoiceRate',$('voiceRate').value);localStorage.setItem('lenaMicLang',$('micLang').value);log('Setup mentve');testServer(true)}
+function saveProfile(){localStorage.setItem('lenaProfileName',$('profileName').value.trim()||'Bea');localStorage.setItem('lenaAssistantName',$('assistantName').value.trim()||'Léna');addMessage('A profilbeállításokat elmentettem.','lena');showView('chat')}
+function toggleDark(){state.dark=!state.dark;localStorage.setItem('lenaDark',state.dark?'on':'off');updateSwitches()}function toggleTyping(){state.typing=!state.typing;localStorage.setItem('lenaTyping',state.typing?'on':'off');updateSwitches()}function toggleDev(){state.dev=!state.dev;localStorage.setItem('lenaDev',state.dev?'on':'off');updateSwitches()}
+async function testServer(showMessage=false){try{const r=await fetch(apiUrl('/health'),{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const data=await r.json();$('serverDot').classList.remove('off');$('serverText').textContent='Szerver online';log('/health OK '+JSON.stringify(data));if(showMessage){addMessage('A LÉNA szerver elérhető. ✅','lena');showView('chat')}}catch(e){$('serverDot').classList.add('off');$('serverText').textContent='Szerver nem elérhető';log('/health HIBA: '+e.message);if(showMessage){addMessage('A szervert most nem érem el.','lena');showView('chat')}}}
+function exportSettings(){const data={serverUrl:localStorage.getItem('lenaServerUrl')||'',speech:state.speechOn,continuous:state.continuous,voiceLang:localStorage.getItem('lenaVoiceLang')||'hu-HU',voiceRate:localStorage.getItem('lenaVoiceRate')||'0.95',micLang:localStorage.getItem('lenaMicLang')||'hu-HU',dark:state.dark,typing:state.typing,profileName:localStorage.getItem('lenaProfileName')||'Bea'};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='lena_beallitasok.json';a.click();URL.revokeObjectURL(a.href)}
+function resetLocalSettings(){if(!confirm('Biztosan törlöd a LÉNA helyi beállításait?'))return;['lenaServerUrl','lenaSpeech','lenaContinuous','lenaVoiceLang','lenaVoiceRate','lenaMicLang','lenaDark','lenaTyping','lenaDev','lenaProfileName','lenaAssistantName'].forEach(k=>localStorage.removeItem(k));location.reload()}
+function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+document.addEventListener('visibilitychange',()=>{if(document.hidden){setListening(false);setSpeaking(false)}});loadSetup();testServer(false);setInterval(()=>testServer(false),60000);
+</script>
+</body>
+</html>
