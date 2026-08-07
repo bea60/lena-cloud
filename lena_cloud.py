@@ -7,6 +7,14 @@ from openai import OpenAI
 import requests
 
 app = Flask(__name__)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
 
